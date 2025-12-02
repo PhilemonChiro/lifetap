@@ -46,6 +46,18 @@ WHATSAPP_CONFIG = {
     'webhook_verify_token': os.getenv('WHATSAPP_WEBHOOK_VERIFY_TOKEN'),
 }
 
+# =============================================================================
+# SMS GATEWAY CONFIGURATION (Android SMS Gateway - Cloud Mode)
+# https://github.com/capcom6/android-sms-gateway
+# =============================================================================
+
+SMS_GATEWAY_CONFIG = {
+    'base_url': os.getenv('SMS_GATEWAY_URL', 'https://api.sms-gate.app'),
+    'username': os.getenv('SMS_GATEWAY_USERNAME'),
+    'password': os.getenv('SMS_GATEWAY_PASSWORD'),
+    'device_id': os.getenv('SMS_GATEWAY_DEVICE_ID'),
+}
+
 # Private key for Flow decryption
 private_key = None
 
@@ -145,6 +157,115 @@ def encrypt_flow_response(response: dict) -> str:
     encrypted = aesgcm.encrypt(flipped_iv, json.dumps(response).encode(), None)
 
     return base64.b64encode(encrypted).decode('utf-8')
+
+
+# =============================================================================
+# SMS GATEWAY HELPERS (Android SMS Gateway - Cloud Mode)
+# =============================================================================
+
+def send_sms(phone_number: str, message: str, ttl: int = 86400) -> dict:
+    """
+    Send SMS via Android SMS Gateway Cloud API.
+
+    Args:
+        phone_number: Recipient phone number (e.g., +263771234567)
+        message: SMS message text
+        ttl: Time to live in seconds (default 24 hours)
+
+    Returns:
+        API response dict with message ID and state
+    """
+    url = f"{SMS_GATEWAY_CONFIG['base_url']}/3rdparty/v1/message"
+
+    # HTTP Basic Auth
+    auth = (SMS_GATEWAY_CONFIG['username'], SMS_GATEWAY_CONFIG['password'])
+
+    payload = {
+        'message': message,
+        'phoneNumbers': [phone_number],
+        'ttl': ttl
+    }
+
+    # Add device ID if configured (for multi-device setups)
+    if SMS_GATEWAY_CONFIG.get('device_id'):
+        payload['id'] = SMS_GATEWAY_CONFIG['device_id']
+
+    try:
+        response = requests.post(url, auth=auth, json=payload)
+        response.raise_for_status()
+        result = response.json()
+        app.logger.info(f"SMS sent to {phone_number}: {result}")
+        return result
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"SMS sending failed to {phone_number}: {e}")
+        return {'error': str(e), 'state': 'Failed'}
+
+
+def send_bulk_sms(phone_numbers: list, message: str, ttl: int = 86400) -> dict:
+    """
+    Send SMS to multiple recipients via Android SMS Gateway.
+
+    Args:
+        phone_numbers: List of recipient phone numbers
+        message: SMS message text
+        ttl: Time to live in seconds
+
+    Returns:
+        API response dict
+    """
+    url = f"{SMS_GATEWAY_CONFIG['base_url']}/3rdparty/v1/message"
+    auth = (SMS_GATEWAY_CONFIG['username'], SMS_GATEWAY_CONFIG['password'])
+
+    payload = {
+        'message': message,
+        'phoneNumbers': phone_numbers,
+        'ttl': ttl
+    }
+
+    if SMS_GATEWAY_CONFIG.get('device_id'):
+        payload['id'] = SMS_GATEWAY_CONFIG['device_id']
+
+    try:
+        response = requests.post(url, auth=auth, json=payload)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"Bulk SMS failed: {e}")
+        return {'error': str(e), 'state': 'Failed'}
+
+
+def get_sms_status(message_id: str) -> dict:
+    """
+    Get status of a sent SMS message.
+
+    Args:
+        message_id: The ID returned when message was sent
+
+    Returns:
+        Message status dict
+    """
+    url = f"{SMS_GATEWAY_CONFIG['base_url']}/3rdparty/v1/message/{message_id}"
+    auth = (SMS_GATEWAY_CONFIG['username'], SMS_GATEWAY_CONFIG['password'])
+
+    try:
+        response = requests.get(url, auth=auth)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"SMS status check failed for {message_id}: {e}")
+        return {'error': str(e)}
+
+
+def notify_via_sms(phone_number: str, member_name: str, incident: dict):
+    """
+    Send emergency SMS notification (fallback when WhatsApp unavailable).
+    """
+    message = (
+        f"LIFETAP EMERGENCY: {member_name} needs help. "
+        f"Incident: {incident.get('incident_number')}. "
+        f"Track: lifetap.co.zw/t/{incident.get('incident_number')}"
+    )
+    return send_sms(phone_number, message)
 
 
 # =============================================================================
