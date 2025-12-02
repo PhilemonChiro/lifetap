@@ -1,0 +1,459 @@
+{
+  "templates": {
+    "emergency_activation": {
+      "name": "lifetap_emergency_activation",
+      "language": "en",
+      "category": "UTILITY",
+      "components": [
+        {
+          "type": "HEADER",
+          "format": "TEXT",
+          "text": "🚨 EMERGENCY ACTIVATED"
+        },
+        {
+          "type": "BODY",
+          "text": "Member: {{1}}\nID: {{2}}\nStatus: ✅ Verified\n\nAn ambulance will be dispatched immediately.\n\n📍 Please share your current location so we can send help.",
+          "example": {
+            "body_text": [["John Moyo", "LT-2025-A7X9K3"]]
+          }
+        },
+        {
+          "type": "BUTTONS",
+          "buttons": [
+            {
+              "type": "QUICK_REPLY",
+              "text": "📍 Share Location"
+            }
+          ]
+        }
+      ]
+    },
+    "ambulance_dispatched": {
+      "name": "lifetap_ambulance_dispatched",
+      "language": "en",
+      "category": "UTILITY",
+      "components": [
+        {
+          "type": "HEADER",
+          "format": "TEXT",
+          "text": "✅ AMBULANCE DISPATCHED"
+        },
+        {
+          "type": "BODY",
+          "text": "🕐 ETA: {{1}} minutes\n\n🚑 Vehicle: {{2}}\n👤 Driver: {{3}}\n📞 Contact: {{4}}\n\n📍 Track: {{5}}\n\n─────────────────\nPatient Info:\n🩸 Blood Type: {{6}}\n⚠️ Allergies: {{7}}\n💊 Conditions: {{8}}\n─────────────────\n\n✅ Next of Kin has been notified.\n\nPlease stay with the patient until help arrives.",
+          "example": {
+            "body_text": [["12", "HAR-1234", "Peter Chuma", "0771234567", "lifetap.co.zw/t/INC001", "O+", "Penicillin", "Diabetic"]]
+          }
+        }
+      ]
+    },
+    "nok_emergency_alert": {
+      "name": "lifetap_nok_alert",
+      "language": "en",
+      "category": "UTILITY",
+      "components": [
+        {
+          "type": "HEADER",
+          "format": "TEXT",
+          "text": "🚨 EMERGENCY ALERT"
+        },
+        {
+          "type": "BODY",
+          "text": "{{1}} has had an emergency.\n\n📍 Location: {{2}}\n🚑 Ambulance ETA: {{3}} minutes\n🏥 Destination: {{4}}\n\n📍 Track live: {{5}}\n\nWe will keep you updated.",
+          "example": {
+            "body_text": [["John Moyo", "Corner Samora Machel & J. Nyerere, Harare", "12", "Parirenyatwa Hospital", "lifetap.co.zw/t/INC001"]]
+          }
+        },
+        {
+          "type": "BUTTONS",
+          "buttons": [
+            {
+              "type": "URL",
+              "text": "📍 Track Ambulance",
+              "url": "https://lifetap.co.zw/t/{{1}}",
+              "example": ["INC001"]
+            }
+          ]
+        }
+      ]
+    },
+    "nok_status_update": {
+      "name": "lifetap_nok_status_update",
+      "language": "en",
+      "category": "UTILITY",
+      "components": [
+        {
+          "type": "BODY",
+          "text": "Update on {{1}}:\n\n{{2}}\n\n📍 Track: {{3}}",
+          "example": {
+            "body_text": [["John Moyo", "🚑 Ambulance has arrived at the scene.", "lifetap.co.zw/t/INC001"]]
+          }
+        }
+      ]
+    },
+    "subscription_expired_emergency": {
+      "name": "lifetap_subscription_expired",
+      "language": "en",
+      "category": "UTILITY",
+      "components": [
+        {
+          "type": "HEADER",
+          "format": "TEXT",
+          "text": "⚠️ Subscription Expired"
+        },
+        {
+          "type": "BODY",
+          "text": "This member's subscription has expired.\n\nMember: {{1}}\nID: {{2}}\n\nEmergency assistance is still available:",
+          "example": {
+            "body_text": [["John Moyo", "LT-2025-A7X9K3"]]
+          }
+        },
+        {
+          "type": "BUTTONS",
+          "buttons": [
+            {
+              "type": "QUICK_REPLY",
+              "text": "💳 Pay $5 Now"
+            },
+            {
+              "type": "QUICK_REPLY",
+              "text": "🚑 Proceed (Bill Later)"
+            },
+            {
+              "type": "QUICK_REPLY",
+              "text": "📞 Public Emergency"
+            }
+          ]
+        }
+      ]
+    },
+    "location_request": {
+      "name": "lifetap_location_request",
+      "language": "en",
+      "category": "UTILITY",
+      "components": [
+        {
+          "type": "BODY",
+          "text": "📍 We need your location to dispatch the ambulance.\n\nPlease tap the button below or:\n1. Tap the 📎 attachment icon\n2. Select 'Location'\n3. Share your current location"
+        },
+        {
+          "type": "BUTTONS",
+          "buttons": [
+            {
+              "type": "QUICK_REPLY",
+              "text": "📍 Share Location"
+            },
+            {
+              "type": "QUICK_REPLY",
+              "text": "✏️ Type Address"
+            }
+          ]
+        }
+      ]
+    },
+    "registration_welcome": {
+      "name": "lifetap_registration_welcome",
+      "language": "en",
+      "category": "MARKETING",
+      "components": [
+        {
+          "type": "HEADER",
+          "format": "IMAGE",
+          "example": {
+            "header_handle": ["lifetap_banner.png"]
+          }
+        },
+        {
+          "type": "BODY",
+          "text": "Welcome to LifeTap! 🏥\n\nGet instant access to emergency ambulance services from just $1/month.\n\n✅ Guaranteed ambulance dispatch\n✅ Medical info shared with paramedics\n✅ Next of kin notified automatically\n✅ No upfront payment at emergency\n\nTap below to get started:"
+        },
+        {
+          "type": "BUTTONS",
+          "buttons": [
+            {
+              "type": "FLOW",
+              "text": "Register Now",
+              "flow_id": "{{REGISTRATION_FLOW_ID}}",
+              "flow_action": "navigate",
+              "navigate_screen": "WELCOME"
+            }
+          ]
+        }
+      ]
+    },
+    "registration_complete": {
+      "name": "lifetap_registration_complete",
+      "language": "en",
+      "category": "UTILITY",
+      "components": [
+        {
+          "type": "HEADER",
+          "format": "TEXT",
+          "text": "✅ Registration Complete!"
+        },
+        {
+          "type": "BODY",
+          "text": "Welcome to LifeTap, {{1}}!\n\n🆔 Member ID: {{2}}\n💳 Plan: {{3}}\n📅 Valid Until: {{4}}\n\nYour digital QR code is attached. You can use it immediately for emergencies.\n\n📦 Your physical card will be delivered within 5 business days.\n\nIn an emergency, anyone can scan your card to get you help instantly.",
+          "example": {
+            "body_text": [["John", "LT-2025-A7X9K3", "Guardian", "January 2, 2026"]]
+          }
+        }
+      ]
+    },
+    "digital_card": {
+      "name": "lifetap_digital_card",
+      "language": "en",
+      "category": "UTILITY",
+      "components": [
+        {
+          "type": "HEADER",
+          "format": "IMAGE",
+          "example": {
+            "header_handle": ["qr_code_placeholder.png"]
+          }
+        },
+        {
+          "type": "BODY",
+          "text": "🆔 Your LifeTap Digital Card\n\nMember: {{1}}\nID: {{2}}\nPlan: {{3}}\n\nSave this QR code. In an emergency, anyone can scan it to activate help.\n\n⚠️ Keep this code private - it contains your medical information.",
+          "example": {
+            "body_text": [["John Moyo", "LT-2025-A7X9K3", "Guardian"]]
+          }
+        }
+      ]
+    },
+    "subscription_reminder": {
+      "name": "lifetap_subscription_reminder",
+      "language": "en",
+      "category": "UTILITY",
+      "components": [
+        {
+          "type": "BODY",
+          "text": "Hi {{1}},\n\nYour LifeTap subscription expires in {{2}} days ({{3}}).\n\n💳 Plan: {{4}}\n💰 Renewal: {{5}}\n\nRenew now to maintain uninterrupted emergency coverage.",
+          "example": {
+            "body_text": [["John", "3", "January 2, 2026", "Guardian", "$2.50"]]
+          }
+        },
+        {
+          "type": "BUTTONS",
+          "buttons": [
+            {
+              "type": "QUICK_REPLY",
+              "text": "✅ Renew Now"
+            },
+            {
+              "type": "QUICK_REPLY",
+              "text": "📅 Remind Later"
+            }
+          ]
+        }
+      ]
+    },
+    "subscription_expired": {
+      "name": "lifetap_subscription_expired_notice",
+      "language": "en",
+      "category": "UTILITY",
+      "components": [
+        {
+          "type": "BODY",
+          "text": "Hi {{1}},\n\n⚠️ Your LifeTap subscription has expired.\n\nYour emergency card is currently inactive. Renew now to restore coverage.\n\n💳 Plan: {{2}}\n💰 Amount: {{3}}",
+          "example": {
+            "body_text": [["John", "Guardian", "$2.50"]]
+          }
+        },
+        {
+          "type": "BUTTONS",
+          "buttons": [
+            {
+              "type": "QUICK_REPLY",
+              "text": "✅ Renew Now"
+            }
+          ]
+        }
+      ]
+    },
+    "payment_confirmation": {
+      "name": "lifetap_payment_confirmation",
+      "language": "en",
+      "category": "UTILITY",
+      "components": [
+        {
+          "type": "BODY",
+          "text": "✅ Payment Received!\n\nAmount: {{1}}\nReference: {{2}}\n\nYour LifeTap subscription is now active until {{3}}.\n\nThank you for choosing LifeTap.",
+          "example": {
+            "body_text": [["$2.50", "LT-PAY-123456", "February 2, 2026"]]
+          }
+        }
+      ]
+    },
+    "incident_complete": {
+      "name": "lifetap_incident_complete",
+      "language": "en",
+      "category": "UTILITY",
+      "components": [
+        {
+          "type": "BODY",
+          "text": "Emergency incident completed.\n\nPatient: {{1}}\nDelivered to: {{2}}\nTime: {{3}}\n\n💚 We hope {{4}} recovers quickly.\n\n📞 Counselling support is available. Reply 'COUNSELLING' to book a session.",
+          "example": {
+            "body_text": [["John Moyo", "Parirenyatwa Hospital", "14:35", "John"]]
+          }
+        },
+        {
+          "type": "BUTTONS",
+          "buttons": [
+            {
+              "type": "QUICK_REPLY",
+              "text": "📞 Book Counselling"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "interactive_messages": {
+    "emergency_type_selection": {
+      "type": "button",
+      "header": {
+        "type": "text",
+        "text": "📋 Emergency Details"
+      },
+      "body": {
+        "text": "What type of emergency is this? (Optional - helps paramedics prepare)"
+      },
+      "action": {
+        "buttons": [
+          {"type": "reply", "reply": {"id": "accident", "title": "🚗 Road Accident"}},
+          {"type": "reply", "reply": {"id": "medical", "title": "🏥 Medical Emergency"}},
+          {"type": "reply", "reply": {"id": "other", "title": "❓ Other/Skip"}}
+        ]
+      }
+    },
+    "patient_status_selection": {
+      "type": "button",
+      "body": {
+        "text": "Is the patient conscious?"
+      },
+      "action": {
+        "buttons": [
+          {"type": "reply", "reply": {"id": "conscious", "title": "Yes"}},
+          {"type": "reply", "reply": {"id": "unconscious", "title": "No"}},
+          {"type": "reply", "reply": {"id": "unknown", "title": "Not Sure"}}
+        ]
+      }
+    },
+    "plan_selection": {
+      "type": "list",
+      "header": {
+        "type": "text",
+        "text": "💳 Choose Your Plan"
+      },
+      "body": {
+        "text": "Select a monthly plan that suits your needs:"
+      },
+      "action": {
+        "button": "View Plans",
+        "sections": [
+          {
+            "title": "Available Plans",
+            "rows": [
+              {
+                "id": "lifeline",
+                "title": "🟢 Lifeline - $1.00",
+                "description": "Road ambulance, basic EMR, 1 counselling session"
+              },
+              {
+                "id": "guardian",
+                "title": "🔵 Guardian - $2.50",
+                "description": "Road+Air, full EMR, 2 sessions, $100 payout"
+              },
+              {
+                "id": "shield_plus",
+                "title": "🟣 Shield Plus - $5.00",
+                "description": "Full cover, $75 fund, GP consult, $300 payout"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "payment_method_selection": {
+      "type": "list",
+      "header": {
+        "type": "text",
+        "text": "💰 Payment Method"
+      },
+      "body": {
+        "text": "How would you like to pay?"
+      },
+      "action": {
+        "button": "Select Method",
+        "sections": [
+          {
+            "title": "Mobile Money",
+            "rows": [
+              {"id": "ecocash", "title": "📱 EcoCash", "description": "Pay with EcoCash"},
+              {"id": "onemoney", "title": "📱 OneMoney", "description": "Pay with OneMoney"},
+              {"id": "innbucks", "title": "📱 InnBucks", "description": "Pay with InnBucks"}
+            ]
+          },
+          {
+            "title": "Card Payment",
+            "rows": [
+              {"id": "card", "title": "💳 Visa/Mastercard", "description": "Pay with debit or credit card"}
+            ]
+          }
+        ]
+      }
+    },
+    "main_menu": {
+      "type": "list",
+      "header": {
+        "type": "text",
+        "text": "LifeTap Menu"
+      },
+      "body": {
+        "text": "How can we help you today?"
+      },
+      "action": {
+        "button": "Open Menu",
+        "sections": [
+          {
+            "title": "Emergency",
+            "rows": [
+              {"id": "emergency", "title": "🚨 Report Emergency", "description": "Activate emergency response"},
+              {"id": "test_card", "title": "🔧 Test My Card", "description": "Verify your card is working"}
+            ]
+          },
+          {
+            "title": "Account",
+            "rows": [
+              {"id": "view_profile", "title": "👤 My Profile", "description": "View your details"},
+              {"id": "update_emr", "title": "🏥 Update Medical Info", "description": "Update health information"},
+              {"id": "update_nok", "title": "👨‍👩‍👧 Update Next of Kin", "description": "Change emergency contact"}
+            ]
+          },
+          {
+            "title": "Subscription",
+            "rows": [
+              {"id": "view_subscription", "title": "💳 My Subscription", "description": "View plan details"},
+              {"id": "upgrade", "title": "⬆️ Upgrade Plan", "description": "Change to a higher tier"},
+              {"id": "renew", "title": "🔄 Renew Now", "description": "Renew your subscription"}
+            ]
+          },
+          {
+            "title": "Support",
+            "rows": [
+              {"id": "help", "title": "❓ Help", "description": "Get assistance"},
+              {"id": "counselling", "title": "📞 Book Counselling", "description": "Schedule a counselling session"}
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "quick_replies": {
+    "yes_no": ["Yes", "No"],
+    "confirm_cancel": ["✅ Confirm", "❌ Cancel"],
+    "share_location": ["📍 Share Location", "✏️ Type Address"],
+    "emergency_options": ["💳 Pay $5 Now", "🚑 Proceed Anyway", "📞 Public Emergency"]
+  }
+}

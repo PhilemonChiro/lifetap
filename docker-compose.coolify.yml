@@ -1,0 +1,84 @@
+# LifeTap WhatsApp Flow Service - Coolify Production
+# Simplified compose for Coolify deployment
+#
+# Coolify handles:
+# - Traefik proxy configuration automatically
+# - SSL certificates
+# - Environment variables via dashboard
+# - Container management
+
+services:
+  whatsapp-flow:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+
+    # Coolify exposes this automatically via Traefik
+    expose:
+      - "5000"
+
+    # Environment variables - Configure in Coolify dashboard
+    environment:
+      # Application
+      APP_ENV: ${APP_ENV:-production}
+      APP_DEBUG: ${APP_DEBUG:-false}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?APP_SECRET_KEY is required}
+
+      # Supabase
+      SUPABASE_URL: ${SUPABASE_URL:?SUPABASE_URL is required}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?SUPABASE_SERVICE_ROLE_KEY is required}
+
+      # WhatsApp
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:?WHATSAPP_PHONE_NUMBER_ID is required}
+      WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:?WHATSAPP_ACCESS_TOKEN is required}
+      WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:?WHATSAPP_WEBHOOK_VERIFY_TOKEN is required}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
+
+      # WhatsApp Flow Encryption
+      WHATSAPP_PRIVATE_KEY: ${WHATSAPP_PRIVATE_KEY}
+      WHATSAPP_PRIVATE_KEY_PASSWORD: ${WHATSAPP_PRIVATE_KEY_PASSWORD}
+      WHATSAPP_FLOW_TOKEN_SECRET: ${WHATSAPP_FLOW_TOKEN_SECRET}
+
+      # Paynow
+      PAYNOW_INTEGRATION_ID: ${PAYNOW_INTEGRATION_ID}
+      PAYNOW_INTEGRATION_KEY: ${PAYNOW_INTEGRATION_KEY}
+      PAYNOW_RESULT_URL: ${PAYNOW_RESULT_URL}
+      PAYNOW_RETURN_URL: ${PAYNOW_RETURN_URL}
+
+      # SMS Gateway
+      SMS_GATEWAY_URL: ${SMS_GATEWAY_URL}
+      SMS_GATEWAY_API_KEY: ${SMS_GATEWAY_API_KEY}
+
+      # Google Maps
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY}
+
+      # Emergency
+      EMERGENCY_WHATSAPP_NUMBER: ${EMERGENCY_WHATSAPP_NUMBER}
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+    # Logging
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Resource limits (adjust as needed)
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M

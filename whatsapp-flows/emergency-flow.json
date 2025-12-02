@@ -1,0 +1,129 @@
+{
+  "version": "7.2",
+  "screens": [
+    {
+      "id": "EMERGENCY_SCREEN",
+      "title": "Emergency Response",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "member_name": {
+          "type": "string",
+          "__example__": "John Moyo"
+        },
+        "member_id": {
+          "type": "string",
+          "__example__": "LT-2025-A7X9K3"
+        },
+        "blood_type": {
+          "type": "string",
+          "__example__": "O+"
+        },
+        "allergies": {
+          "type": "string",
+          "__example__": "Penicillin"
+        },
+        "conditions": {
+          "type": "string",
+          "__example__": "Diabetic"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "🚨 EMERGENCY"
+          },
+          {
+            "type": "TextSubheading",
+            "text": "${data.member_name} • ${data.member_id}"
+          },
+          {
+            "type": "TextCaption",
+            "text": "🩸 ${data.blood_type} | ⚠️ ${data.allergies} | 💊 ${data.conditions}"
+          },
+          {
+            "type": "Form",
+            "name": "emergency_form",
+            "children": [
+              {
+                "type": "Dropdown",
+                "name": "emergency_type",
+                "label": "What happened?",
+                "required": true,
+                "data-source": [
+                  {"id": "road_accident", "title": "🚗 Road Accident"},
+                  {"id": "collapse", "title": "😵 Person Collapsed"},
+                  {"id": "heart_attack", "title": "💔 Chest Pain / Heart Attack"},
+                  {"id": "breathing", "title": "😮‍💨 Breathing Difficulty"},
+                  {"id": "injury", "title": "🩸 Serious Injury / Bleeding"},
+                  {"id": "seizure", "title": "⚡ Seizure / Convulsion"},
+                  {"id": "burn", "title": "🔥 Burn"},
+                  {"id": "other", "title": "❓ Other Medical Emergency"}
+                ]
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "conscious",
+                "label": "Is the person conscious?",
+                "required": true,
+                "data-source": [
+                  {"id": "yes", "title": "Yes - Awake and responsive"},
+                  {"id": "no", "title": "No - Unconscious"},
+                  {"id": "unsure", "title": "Not sure"}
+                ]
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "breathing",
+                "label": "Is the person breathing?",
+                "required": true,
+                "data-source": [
+                  {"id": "yes", "title": "Yes - Breathing normally"},
+                  {"id": "struggling", "title": "Yes - But struggling"},
+                  {"id": "no", "title": "No - Not breathing"},
+                  {"id": "unsure", "title": "Not sure"}
+                ]
+              },
+              {
+                "type": "Dropdown",
+                "name": "victim_count",
+                "label": "How many people need help?",
+                "required": true,
+                "data-source": [
+                  {"id": "1", "title": "1 person"},
+                  {"id": "2", "title": "2 people"},
+                  {"id": "3", "title": "3 people"},
+                  {"id": "4+", "title": "4 or more people"}
+                ]
+              },
+              {
+                "type": "TextArea",
+                "name": "scene_description",
+                "label": "Describe the scene (optional)",
+                "required": false,
+                "helper-text": "Any details that can help responders"
+              }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "📍 SEND & SHARE LOCATION",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "member_id": "${data.member_id}",
+                "emergency_type": "${form.emergency_type}",
+                "conscious": "${form.conscious}",
+                "breathing": "${form.breathing}",
+                "victim_count": "${form.victim_count}",
+                "scene_description": "${form.scene_description}"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

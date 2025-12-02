@@ -1,0 +1,109 @@
+{
+  "version": "7.0",
+  "data_api_version": "3.0",
+  "screens": [
+    {
+      "id": "REGISTER",
+      "title": "Join LifeTap",
+      "terminal": true,
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "LifeTap Emergency Card"
+          },
+          {
+            "type": "TextCaption",
+            "text": "Ambulance cover from $1/month"
+          },
+          {
+            "type": "Form",
+            "name": "reg_form",
+            "children": [
+              {
+                "type": "TextInput",
+                "name": "full_name",
+                "label": "Full Name",
+                "required": true,
+                "input-type": "text"
+              },
+              {
+                "type": "TextInput",
+                "name": "phone",
+                "label": "Phone Number",
+                "required": true,
+                "input-type": "phone"
+              },
+              {
+                "type": "Dropdown",
+                "name": "blood_type",
+                "label": "Blood Type",
+                "required": true,
+                "data-source": [
+                  {"id": "O+", "title": "O+"},
+                  {"id": "O-", "title": "O-"},
+                  {"id": "A+", "title": "A+"},
+                  {"id": "A-", "title": "A-"},
+                  {"id": "B+", "title": "B+"},
+                  {"id": "B-", "title": "B-"},
+                  {"id": "AB+", "title": "AB+"},
+                  {"id": "AB-", "title": "AB-"},
+                  {"id": "unknown", "title": "Don't Know"}
+                ]
+              },
+              {
+                "type": "TextInput",
+                "name": "allergies",
+                "label": "Allergies (optional)",
+                "required": false,
+                "input-type": "text"
+              },
+              {
+                "type": "TextInput",
+                "name": "nok_name",
+                "label": "Emergency Contact Name",
+                "required": true,
+                "input-type": "text"
+              },
+              {
+                "type": "TextInput",
+                "name": "nok_phone",
+                "label": "Emergency Contact Phone",
+                "required": true,
+                "input-type": "phone"
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "plan",
+                "label": "Select Plan",
+                "required": true,
+                "data-source": [
+                  {"id": "lifeline", "title": "Lifeline - $1/mo"},
+                  {"id": "guardian", "title": "Guardian - $2.50/mo"},
+                  {"id": "shield", "title": "Shield+ - $5/mo"}
+                ]
+              }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Continue to Payment",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "full_name": "${form.full_name}",
+                "phone": "${form.phone}",
+                "blood_type": "${form.blood_type}",
+                "allergies": "${form.allergies}",
+                "nok_name": "${form.nok_name}",
+                "nok_phone": "${form.nok_phone}",
+                "plan": "${form.plan}"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

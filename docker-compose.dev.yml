@@ -1,0 +1,63 @@
+# LifeTap Development Docker Compose
+# For local development with hot reload
+
+services:
+  whatsapp-flow:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: lifetap-whatsapp-flow-dev
+    restart: unless-stopped
+
+    ports:
+      - "5000:5000"
+
+    environment:
+      - APP_ENV=development
+      - APP_DEBUG=true
+      - FLASK_DEBUG=1
+
+    env_file:
+      - ./backend/.env
+
+    volumes:
+      # Mount source code for hot reload
+      - ./backend:/app
+      # Mount keys
+      - ./keys:/app/keys:ro
+
+    command: ["flask", "run", "--host=0.0.0.0", "--port=5000", "--reload"]
+
+    networks:
+      - lifetap-dev
+
+  # Redis for session/cache (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: lifetap-redis-dev
+    ports:
+      - "6379:6379"
+    networks:
+      - lifetap-dev
+
+  # ngrok for WhatsApp webhook testing (optional)
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: lifetap-ngrok
+    restart: unless-stopped
+    command:
+      - "http"
+      - "whatsapp-flow:5000"
+      - "--domain=${NGROK_DOMAIN:-your-domain.ngrok-free.app}"
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    ports:
+      - "4040:4040"
+    networks:
+      - lifetap-dev
+    depends_on:
+      - whatsapp-flow
+
+networks:
+  lifetap-dev:
+    driver: bridge

@@ -1,0 +1,117 @@
+# LifeTap WhatsApp Flow Service
+# Docker Compose for Coolify deployment with Traefik proxy
+#
+# Coolify will automatically:
+# - Handle SSL/TLS certificates via Traefik
+# - Manage environment variables
+# - Handle container orchestration
+
+services:
+  whatsapp-flow:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: lifetap-whatsapp-flow
+    restart: unless-stopped
+
+    # Port mapping (Traefik will proxy to this)
+    expose:
+      - "5000"
+
+    # Environment variables - Set these in Coolify dashboard
+    environment:
+      # Application
+      - APP_ENV=${APP_ENV:-production}
+      - APP_DEBUG=${APP_DEBUG:-false}
+      - APP_SECRET_KEY=${APP_SECRET_KEY}
+
+      # Supabase
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+
+      # WhatsApp Graph API
+      - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}
+      - WHATSAPP_BUSINESS_ACCOUNT_ID=${WHATSAPP_BUSINESS_ACCOUNT_ID}
+      - WHATSAPP_ACCESS_TOKEN=${WHATSAPP_ACCESS_TOKEN}
+      - WHATSAPP_WEBHOOK_VERIFY_TOKEN=${WHATSAPP_WEBHOOK_VERIFY_TOKEN}
+      - WHATSAPP_APP_SECRET=${WHATSAPP_APP_SECRET}
+
+      # WhatsApp Flow Encryption
+      - WHATSAPP_PRIVATE_KEY_PATH=/app/keys/private.pem
+      - WHATSAPP_PRIVATE_KEY_PASSWORD=${WHATSAPP_PRIVATE_KEY_PASSWORD}
+      - WHATSAPP_FLOW_TOKEN_SECRET=${WHATSAPP_FLOW_TOKEN_SECRET}
+
+      # Paynow
+      - PAYNOW_INTEGRATION_ID=${PAYNOW_INTEGRATION_ID}
+      - PAYNOW_INTEGRATION_KEY=${PAYNOW_INTEGRATION_KEY}
+      - PAYNOW_RESULT_URL=${PAYNOW_RESULT_URL}
+      - PAYNOW_RETURN_URL=${PAYNOW_RETURN_URL}
+
+      # SMS Gateway
+      - SMS_GATEWAY_URL=${SMS_GATEWAY_URL}
+      - SMS_GATEWAY_API_KEY=${SMS_GATEWAY_API_KEY}
+
+      # Google Maps
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+
+      # Emergency Config
+      - EMERGENCY_WHATSAPP_NUMBER=${EMERGENCY_WHATSAPP_NUMBER}
+
+    # Mount private key from secret/volume
+    volumes:
+      - whatsapp-keys:/app/keys:ro
+
+    # Traefik labels for Coolify
+    labels:
+      - "traefik.enable=true"
+
+      # HTTP Router
+      - "traefik.http.routers.lifetap-whatsapp.rule=Host(`${DOMAIN:-whatsapp.lifetap.co.zw}`)"
+      - "traefik.http.routers.lifetap-whatsapp.entrypoints=http"
+      - "traefik.http.routers.lifetap-whatsapp.middlewares=redirect-to-https@docker"
+
+      # HTTPS Router
+      - "traefik.http.routers.lifetap-whatsapp-secure.rule=Host(`${DOMAIN:-whatsapp.lifetap.co.zw}`)"
+      - "traefik.http.routers.lifetap-whatsapp-secure.entrypoints=https"
+      - "traefik.http.routers.lifetap-whatsapp-secure.tls=true"
+      - "traefik.http.routers.lifetap-whatsapp-secure.tls.certresolver=letsencrypt"
+
+      # Service
+      - "traefik.http.services.lifetap-whatsapp.loadbalancer.server.port=5000"
+
+      # Health check path
+      - "traefik.http.services.lifetap-whatsapp.loadbalancer.healthcheck.path=/health"
+      - "traefik.http.services.lifetap-whatsapp.loadbalancer.healthcheck.interval=30s"
+
+      # Coolify specific labels
+      - "coolify.managed=true"
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    # Network
+    networks:
+      - coolify
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Named volumes
+volumes:
+  whatsapp-keys:
+    driver: local
+
+# Networks - Use Coolify's default network
+networks:
+  coolify:
+    external: true
