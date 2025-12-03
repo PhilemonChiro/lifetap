@@ -8,7 +8,8 @@ import json
 import base64
 import hashlib
 import requests
-from datetime import datetime
+import uuid
+from datetime import datetime, timedelta
 from functools import wraps
 
 from flask import Flask, request, jsonify, g
@@ -18,6 +19,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.backends import default_backend
 from supabase import create_client, Client
+from paynow import Paynow
 
 # Load environment variables
 load_dotenv()
@@ -56,6 +58,50 @@ SMS_GATEWAY_CONFIG = {
     'username': os.getenv('SMS_GATEWAY_USERNAME'),
     'password': os.getenv('SMS_GATEWAY_PASSWORD'),
     'device_id': os.getenv('SMS_GATEWAY_DEVICE_ID'),
+}
+
+# =============================================================================
+# PAYNOW CONFIGURATION
+# =============================================================================
+
+PAYNOW_CONFIG = {
+    'integration_id': os.getenv('PAYNOW_INTEGRATION_ID'),
+    'integration_key': os.getenv('PAYNOW_INTEGRATION_KEY'),
+    'result_url': os.getenv('PAYNOW_RESULT_URL'),
+    'return_url': os.getenv('PAYNOW_RETURN_URL'),
+}
+
+# Initialize Paynow client
+paynow = None
+if PAYNOW_CONFIG['integration_id'] and PAYNOW_CONFIG['integration_key']:
+    paynow = Paynow(
+        PAYNOW_CONFIG['integration_id'],
+        PAYNOW_CONFIG['integration_key'],
+        PAYNOW_CONFIG['result_url'],
+        PAYNOW_CONFIG['return_url']
+    )
+
+# Subscription tier pricing (in cents USD)
+TIER_PRICING = {
+    'lifeline': 100,      # $1.00
+    'guardian': 250,      # $2.50
+    'shield_plus': 500,   # $5.00
+}
+
+# Tier coverage limits (in cents USD)
+TIER_COVERAGE = {
+    'lifeline': {
+        'max_coverage_cents': 15000,  # $150
+        'services': ['road_ambulance'],
+    },
+    'guardian': {
+        'max_coverage_cents': 50000,  # $500
+        'services': ['road_ambulance', 'air_ambulance', 'stabilization'],
+    },
+    'shield_plus': {
+        'max_coverage_cents': 100000,  # $1000
+        'services': ['road_ambulance', 'air_ambulance', 'stabilization', 'transfer', 'emergency_fund'],
+    },
 }
 
 # Private key for Flow decryption
@@ -431,6 +477,216 @@ def update_incident_location(incident_id: str, lat: float, lng: float, address: 
 
 
 # =============================================================================
+# PAYMENT HELPERS
+# =============================================================================
+
+def generate_transaction_ref() -> str:
+    """Generate unique transaction reference."""
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    random_part = uuid.uuid4().hex[:6].upper()
+    return f"LT-{timestamp}-{random_part}"
+
+
+def create_subscription_payment(member_id: str, tier: str, phone_number: str) -> dict:
+    """
+    Initiate subscription payment via Paynow.
+
+    Returns dict with payment URL or error.
+    """
+    if not paynow:
+        return {'error': 'Payment system not configured'}
+
+    price_cents = TIER_PRICING.get(tier)
+    if not price_cents:
+        return {'error': f'Invalid tier: {tier}'}
+
+    price_usd = price_cents / 100
+    transaction_ref = generate_transaction_ref()
+
+    try:
+        # Create Paynow payment
+        payment = paynow.create_payment(transaction_ref, f"member-{member_id}@lifetap.co.zw")
+        payment.add('LifeTap Subscription', price_usd)
+
+        # Send to mobile money
+        response = paynow.send_mobile(payment, phone_number, 'ecocash')
+
+        if response.success:
+            # Store transaction in database
+            transaction_data = {
+                'transaction_ref': transaction_ref,
+                'external_ref': response.poll_url,
+                'member_id': member_id,
+                'amount_cents': price_cents,
+                'currency': 'USD',
+                'transaction_type': 'subscription_payment',
+                'status': 'awaiting_delivery',
+                'payment_method': 'ecocash',
+                'phone_number': phone_number,
+                'paynow_poll_url': response.poll_url,
+                'description': f'LifeTap {tier.title()} Subscription',
+                'initiated_at': datetime.now().isoformat()
+            }
+
+            result = supabase.table('transactions').insert(transaction_data).execute()
+
+            return {
+                'success': True,
+                'transaction_ref': transaction_ref,
+                'poll_url': response.poll_url,
+                'instructions': response.instructions if hasattr(response, 'instructions') else None
+            }
+        else:
+            return {'error': response.error or 'Payment initiation failed'}
+
+    except Exception as e:
+        app.logger.error(f"Payment error: {e}")
+        return {'error': str(e)}
+
+
+def check_payment_status(poll_url: str) -> dict:
+    """Check payment status from Paynow."""
+    if not paynow:
+        return {'error': 'Payment system not configured'}
+
+    try:
+        status = paynow.check_transaction_status(poll_url)
+        return {
+            'paid': status.paid,
+            'status': status.status,
+            'amount': status.amount if hasattr(status, 'amount') else None,
+            'reference': status.reference if hasattr(status, 'reference') else None
+        }
+    except Exception as e:
+        app.logger.error(f"Status check error: {e}")
+        return {'error': str(e)}
+
+
+def activate_subscription(member_id: str, tier: str, transaction_id: str = None) -> dict:
+    """Activate or renew a member's subscription."""
+    try:
+        price_cents = TIER_PRICING.get(tier, 100)
+        now = datetime.now()
+        expires_at = now + timedelta(days=30)
+
+        subscription_data = {
+            'member_id': member_id,
+            'tier': tier,
+            'price_cents': price_cents,
+            'currency': 'USD',
+            'status': 'active',
+            'started_at': now.isoformat(),
+            'expires_at': expires_at.isoformat(),
+            'auto_renew': True
+        }
+
+        # Check for existing subscription
+        existing = supabase.table('subscriptions').select('id').eq(
+            'member_id', member_id
+        ).execute()
+
+        if existing.data:
+            # Update existing
+            result = supabase.table('subscriptions').update(subscription_data).eq(
+                'member_id', member_id
+            ).execute()
+        else:
+            # Create new
+            result = supabase.table('subscriptions').insert(subscription_data).execute()
+
+        # Update member status to active
+        supabase.table('members').update({'status': 'active'}).eq('id', member_id).execute()
+
+        # Link transaction to subscription if provided
+        if transaction_id and result.data:
+            supabase.table('transactions').update({
+                'subscription_id': result.data[0]['id'],
+                'status': 'paid',
+                'paid_at': now.isoformat()
+            }).eq('id', transaction_id).execute()
+
+        return result.data[0] if result.data else None
+
+    except Exception as e:
+        app.logger.error(f"Subscription activation error: {e}")
+        return None
+
+
+def generate_payment_token(incident_id: str, member_id: str, subscription_id: str, tier: str) -> dict:
+    """Generate a Guaranteed Payment Token for an emergency."""
+    try:
+        coverage = TIER_COVERAGE.get(tier, TIER_COVERAGE['lifeline'])
+
+        # Generate token code
+        token_code = f"GPT-{uuid.uuid4().hex[:8].upper()}"
+
+        token_data = {
+            'token_code': token_code,
+            'incident_id': incident_id,
+            'member_id': member_id,
+            'subscription_id': subscription_id,
+            'tier': tier,
+            'max_coverage_cents': coverage['max_coverage_cents'],
+            'services_covered': coverage['services'],
+            'status': 'active',
+            'issued_at': datetime.now().isoformat(),
+            'expires_at': (datetime.now() + timedelta(hours=24)).isoformat()
+        }
+
+        result = supabase.table('payment_tokens').insert(token_data).execute()
+
+        if result.data:
+            # Link token to incident
+            supabase.table('incidents').update({
+                'payment_token_id': result.data[0]['id']
+            }).eq('id', incident_id).execute()
+
+            return result.data[0]
+
+        return None
+
+    except Exception as e:
+        app.logger.error(f"Token generation error: {e}")
+        return None
+
+
+def verify_payment_token(token_code: str) -> dict:
+    """Verify a payment token for ambulance providers."""
+    try:
+        result = supabase.table('payment_tokens').select(
+            '*, members(*), incidents(*)'
+        ).eq('token_code', token_code).single().execute()
+
+        if not result.data:
+            return {'valid': False, 'error': 'Token not found'}
+
+        token = result.data
+
+        # Check status
+        if token['status'] != 'active':
+            return {'valid': False, 'error': f"Token status: {token['status']}"}
+
+        # Check expiry
+        expires_at = datetime.fromisoformat(token['expires_at'].replace('Z', '+00:00'))
+        if datetime.now(expires_at.tzinfo) > expires_at:
+            return {'valid': False, 'error': 'Token expired'}
+
+        return {
+            'valid': True,
+            'token_code': token_code,
+            'tier': token['tier'],
+            'max_coverage_cents': token['max_coverage_cents'],
+            'services_covered': token['services_covered'],
+            'member': token.get('members'),
+            'incident': token.get('incidents')
+        }
+
+    except Exception as e:
+        app.logger.error(f"Token verification error: {e}")
+        return {'valid': False, 'error': str(e)}
+
+
+# =============================================================================
 # WHATSAPP FLOW ENDPOINT
 # =============================================================================
 
@@ -615,6 +871,196 @@ def receive_webhook():
         app.logger.error(f"Webhook processing error: {e}")
 
     return jsonify({'status': 'ok'}), 200
+
+
+# =============================================================================
+# PAYMENT ENDPOINTS
+# =============================================================================
+
+@app.route('/api/payments/initiate', methods=['POST'])
+def initiate_payment():
+    """Initiate a subscription payment."""
+    data = request.get_json()
+
+    member_id = data.get('member_id')
+    tier = data.get('tier', 'lifeline')
+    phone_number = data.get('phone_number')
+
+    if not member_id or not phone_number:
+        return jsonify({'error': 'member_id and phone_number required'}), 400
+
+    result = create_subscription_payment(member_id, tier, phone_number)
+
+    if result.get('error'):
+        return jsonify(result), 400
+
+    return jsonify(result)
+
+
+@app.route('/api/payments/status/<transaction_ref>', methods=['GET'])
+def payment_status(transaction_ref):
+    """Check payment status."""
+    try:
+        # Get transaction from database
+        result = supabase.table('transactions').select('*').eq(
+            'transaction_ref', transaction_ref
+        ).single().execute()
+
+        if not result.data:
+            return jsonify({'error': 'Transaction not found'}), 404
+
+        transaction = result.data
+
+        # Check status with Paynow if pending
+        if transaction['status'] == 'awaiting_delivery' and transaction.get('paynow_poll_url'):
+            paynow_status = check_payment_status(transaction['paynow_poll_url'])
+
+            if paynow_status.get('paid'):
+                # Activate subscription
+                activate_subscription(
+                    transaction['member_id'],
+                    'lifeline',  # Default tier, should be stored in transaction
+                    transaction['id']
+                )
+                transaction['status'] = 'paid'
+
+        return jsonify(transaction)
+
+    except Exception as e:
+        app.logger.error(f"Status check error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/payments/callback', methods=['POST'])
+def payment_callback():
+    """Paynow payment callback/result URL."""
+    data = request.form.to_dict() or request.get_json() or {}
+
+    app.logger.info(f"Payment callback: {data}")
+
+    reference = data.get('reference')
+    status = data.get('status')
+    paynow_reference = data.get('paynowreference')
+
+    if not reference:
+        return jsonify({'error': 'No reference provided'}), 400
+
+    try:
+        # Find transaction
+        result = supabase.table('transactions').select('*').eq(
+            'transaction_ref', reference
+        ).single().execute()
+
+        if not result.data:
+            return jsonify({'error': 'Transaction not found'}), 404
+
+        transaction = result.data
+
+        # Update transaction
+        update_data = {
+            'paynow_status': status,
+            'paynow_reference': paynow_reference
+        }
+
+        if status and status.lower() == 'paid':
+            update_data['status'] = 'paid'
+            update_data['paid_at'] = datetime.now().isoformat()
+
+            # Activate subscription
+            # Get tier from metadata or default
+            tier = transaction.get('metadata', {}).get('tier', 'lifeline')
+            activate_subscription(transaction['member_id'], tier, transaction['id'])
+
+        elif status and status.lower() in ['failed', 'cancelled']:
+            update_data['status'] = 'failed'
+            update_data['failed_at'] = datetime.now().isoformat()
+
+        supabase.table('transactions').update(update_data).eq(
+            'id', transaction['id']
+        ).execute()
+
+        return jsonify({'status': 'ok'})
+
+    except Exception as e:
+        app.logger.error(f"Callback error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/tokens/verify/<token_code>', methods=['GET'])
+def verify_token(token_code):
+    """Verify a payment token (for ambulance providers)."""
+    result = verify_payment_token(token_code)
+
+    if not result.get('valid'):
+        return jsonify(result), 404 if result.get('error') == 'Token not found' else 400
+
+    return jsonify(result)
+
+
+@app.route('/api/members', methods=['POST'])
+def create_member():
+    """Register a new member."""
+    data = request.get_json()
+
+    required = ['first_name', 'last_name', 'phone_number']
+    for field in required:
+        if not data.get(field):
+            return jsonify({'error': f'{field} is required'}), 400
+
+    try:
+        member_data = {
+            'first_name': data['first_name'],
+            'last_name': data['last_name'],
+            'phone_number': data['phone_number'],
+            'email': data.get('email'),
+            'date_of_birth': data.get('date_of_birth'),
+            'gender': data.get('gender'),
+            'address_line1': data.get('address_line1'),
+            'address_city': data.get('address_city'),
+            'address_province': data.get('address_province'),
+            'registration_channel': data.get('registration_channel', 'whatsapp'),
+            'status': 'pending'
+        }
+
+        result = supabase.table('members').insert(member_data).execute()
+
+        if result.data:
+            member = result.data[0]
+
+            # Create empty EMR record
+            supabase.table('emr_records').insert({
+                'member_id': member['id']
+            }).execute()
+
+            # Add next of kin if provided
+            if data.get('next_of_kin'):
+                nok = data['next_of_kin']
+                supabase.table('next_of_kin').insert({
+                    'member_id': member['id'],
+                    'full_name': nok.get('full_name'),
+                    'relationship': nok.get('relationship'),
+                    'phone_number': nok.get('phone_number'),
+                    'is_primary': True
+                }).execute()
+
+            return jsonify(member), 201
+
+        return jsonify({'error': 'Failed to create member'}), 500
+
+    except Exception as e:
+        app.logger.error(f"Member creation error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/members/<member_id>', methods=['GET'])
+def get_member(member_id):
+    """Get member by member_id (LT-XXXX format)."""
+    member = get_member_by_id(member_id)
+
+    if not member:
+        return jsonify({'error': 'Member not found'}), 404
+
+    return jsonify(member)
 
 
 # =============================================================================
