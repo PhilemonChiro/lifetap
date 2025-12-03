@@ -165,19 +165,32 @@ class MessageHandler:
 
     async def _handle_interactive(self, session: Session, data: Dict) -> Dict:
         """Handle interactive message (button or list selection)."""
-        interactive_type = data.get("type")
         user_id = session.user_id
 
-        # Extract selection ID
+        # Debug log the raw data
+        logger.info(f"Interactive data received: {data}")
+
+        interactive_type = data.get("type")
+
+        # Extract selection ID based on interactive type
+        selection_id = ""
         if interactive_type == "button_reply":
-            selection_id = data.get("button_reply", {}).get("id", "")
+            button_reply = data.get("button_reply", {})
+            selection_id = button_reply.get("id", "") if isinstance(button_reply, dict) else ""
+            logger.info(f"Button reply parsed: {button_reply} -> id={selection_id}")
         elif interactive_type == "list_reply":
-            selection_id = data.get("list_reply", {}).get("id", "")
+            list_reply = data.get("list_reply", {})
+            selection_id = list_reply.get("id", "") if isinstance(list_reply, dict) else ""
+            logger.info(f"List reply parsed: {list_reply} -> id={selection_id}")
         else:
-            logger.warning(f"Unknown interactive type: {interactive_type}")
+            logger.warning(f"Unknown interactive type: {interactive_type}, data: {data}")
             return {"status": "ignored"}
 
-        logger.info(f"Interactive from {user_id}: {selection_id}")
+        if not selection_id:
+            logger.warning(f"No selection_id extracted from interactive message")
+            return {"status": "no_selection"}
+
+        logger.info(f"Interactive from {user_id}: type={interactive_type}, selection={selection_id}, state={session.state.value}")
 
         # Route based on state
         state = session.state

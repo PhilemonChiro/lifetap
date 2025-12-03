@@ -871,6 +871,7 @@ def _process_webhook_message(message: dict):
     from_number = message.get('from')
 
     app.logger.info(f"Processing {msg_type} from {from_number} (id: {msg_id})")
+    app.logger.debug(f"Raw message payload: {message}")
 
     try:
         # Extract message data based on type
@@ -879,6 +880,7 @@ def _process_webhook_message(message: dict):
 
         elif msg_type == 'interactive':
             message_data = message.get('interactive', {})
+            app.logger.info(f"Interactive message data: {message_data}")
 
         elif msg_type == 'location':
             message_data = message.get('location', {})
