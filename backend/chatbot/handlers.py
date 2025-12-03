@@ -449,7 +449,7 @@ class MessageHandler:
     async def _handle_location_received(
         self, session: Session, latitude: float, longitude: float, address: Optional[str]
     ) -> Dict:
-        """Handle location received - create incident."""
+        """Handle location received - create incident and send first aid guidance."""
         user_id = session.user_id
 
         session.set_data("latitude", latitude)
@@ -464,12 +464,27 @@ class MessageHandler:
         if incident:
             session.set_data("incident_id", incident.get("id"))
             session.set_data("incident_number", incident.get("incident_number"))
+            incident_number = incident.get("incident_number")
 
             # Send confirmation
             session.set_state(ConversationState.EMERGENCY_CONFIRMED)
             messages.send_emergency_confirmed(
                 to=user_id,
-                incident_number=incident.get("incident_number"),
+                incident_number=incident_number,
+                member_name=session.member_name
+            )
+
+            # Send first aid guidance based on emergency type
+            emergency_type_id = session.get_data("emergency_type_id", "other")
+            messages.send_first_aid_guidance(
+                to=user_id,
+                emergency_type=emergency_type_id
+            )
+
+            # Send "help on way" message with tracking
+            messages.send_help_on_way(
+                to=user_id,
+                incident_number=incident_number,
                 member_name=session.member_name
             )
 
