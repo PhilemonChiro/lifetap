@@ -6,31 +6,51 @@ for interactive messages (buttons, lists, location requests).
 """
 
 import os
+import logging
 import requests
 from typing import Optional
 
+logger = logging.getLogger(__name__)
+
 WHATSAPP_API_VERSION = 'v18.0'
-WHATSAPP_PHONE_NUMBER_ID = os.getenv('WHATSAPP_PHONE_NUMBER_ID')
-WHATSAPP_ACCESS_TOKEN = os.getenv('WHATSAPP_ACCESS_TOKEN')
 
 
 def get_api_url() -> str:
     """Get WhatsApp Graph API URL."""
-    return f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
+    phone_id = os.getenv('WHATSAPP_PHONE_NUMBER_ID')
+    return f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{phone_id}/messages"
 
 
 def get_headers() -> dict:
     """Get API headers."""
+    token = os.getenv('WHATSAPP_ACCESS_TOKEN')
     return {
-        'Authorization': f"Bearer {WHATSAPP_ACCESS_TOKEN}",
+        'Authorization': f"Bearer {token}",
         'Content-Type': 'application/json'
     }
 
 
 def send_message(payload: dict) -> dict:
     """Send message to WhatsApp API."""
-    response = requests.post(get_api_url(), headers=get_headers(), json=payload)
-    return response.json()
+    url = get_api_url()
+    headers = get_headers()
+
+    logger.info(f"Sending message to: {payload.get('to')}")
+    logger.debug(f"Payload: {payload}")
+
+    try:
+        response = requests.post(url, headers=headers, json=payload)
+        result = response.json()
+
+        if response.status_code != 200:
+            logger.error(f"WhatsApp API error: {response.status_code} - {result}")
+        else:
+            logger.info(f"Message sent successfully: {result.get('messages', [{}])[0].get('id', 'unknown')}")
+
+        return result
+    except Exception as e:
+        logger.error(f"Failed to send message: {e}")
+        return {'error': str(e)}
 
 
 def send_text(to: str, text: str, preview_url: bool = False) -> dict:
