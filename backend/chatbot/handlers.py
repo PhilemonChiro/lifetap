@@ -1,13 +1,13 @@
 """
-Conversation Flow Handlers
+Emergency Flow Handler
 
-Handles the logic for different conversation flows (emergency, registration, etc.)
-Each handler processes user input and returns the next action.
+Handles the emergency conversation flow when bystander scans NFC/QR card.
+NFC card opens: wa.me/15550870762?text=EMERGENCY:LT-2025-A7X9K3
 """
 
 import logging
 from datetime import datetime
-from typing import Optional, Tuple
+from typing import Optional
 
 from .state import ConversationState, ConversationSession, conversation_manager
 from . import messages
@@ -294,39 +294,31 @@ class EmergencyFlowHandler:
             logger.error(f"Error notifying next of kin: {e}")
 
 
-class MainMenuHandler:
-    """Handles main menu and general conversation routing."""
+class EmergencyHandler:
+    """
+    Main handler for emergency flow triggered by NFC/QR scan.
+
+    NFC card URL format: wa.me/15550870762?text=EMERGENCY:LT-2025-A7X9K3
+    """
 
     def __init__(self, supabase_client):
         self.supabase = supabase_client
-        self.emergency_handler = EmergencyFlowHandler(supabase_client)
-
-    def get_member_by_phone(self, phone_number: str) -> Optional[dict]:
-        """Look up member by phone number."""
-        try:
-            # Normalize phone number (remove + prefix if present)
-            normalized = phone_number.lstrip('+')
-
-            result = self.supabase.table('members').select(
-                '*, emr_records(*), subscriptions(*, tiers(*))'
-            ).or_(
-                f"phone_number.eq.{phone_number},phone_number.eq.{normalized},phone_number.eq.+{normalized}"
-            ).execute()
-
-            return result.data[0] if result.data else None
-
-        except Exception as e:
-            logger.error(f"Error looking up member: {e}")
-            return None
+        self.emergency_flow = EmergencyFlowHandler(supabase_client)
 
     def get_member_by_id(self, member_id: str) -> Optional[dict]:
         """Look up member by member_id (LT-XXXX format)."""
         try:
+            logger.info(f"Looking up member: {member_id}")
             result = self.supabase.table('members').select(
                 '*, emr_records(*), subscriptions(*, tiers(*))'
             ).eq('member_id', member_id).execute()
 
-            return result.data[0] if result.data else None
+            if result.data:
+                logger.info(f"Member found: {result.data[0].get('first_name')}")
+                return result.data[0]
+            else:
+                logger.warning(f"Member not found: {member_id}")
+                return None
 
         except Exception as e:
             logger.error(f"Error looking up member: {e}")
@@ -336,22 +328,27 @@ class MainMenuHandler:
         """
         Handle emergency trigger from NFC/QR scan.
 
+        Triggered by: EMERGENCY:LT-2025-A7X9K3
+
         Args:
-            phone_number: Bystander's phone number
-            member_id: Scanned member ID
+            phone_number: Bystander's phone number (who scanned the card)
+            member_id: Member ID from the scanned card
 
         Returns:
             API response
         """
+        logger.info(f"Emergency triggered for member {member_id} by {phone_number}")
+
         session = conversation_manager.get_session(phone_number)
 
         # Look up member
         member = self.get_member_by_id(member_id)
 
         if not member:
+            logger.warning(f"Member not found: {member_id}")
             return messages.send_text(
                 phone_number,
-                f"Member ID {member_id} not found. Please verify the card and try again, or call emergency services directly."
+                f"*MEMBER NOT FOUND*\n\nID: {member_id}\n\nPlease verify the card and try again, or call emergency services directly:\n\n*MARS:* 0242 700991\n*Netstar:* 0772 390 303"
             )
 
         # Check subscription status
@@ -363,181 +360,90 @@ class MainMenuHandler:
                 break
 
         if not active_sub:
-            # Member exists but subscription expired
+            # Member exists but subscription expired - still help but warn
+            logger.warning(f"Subscription expired for member {member_id}")
             messages.send_text(
                 phone_number,
-                f"*Member Found:* {member.get('first_name')} {member.get('last_name')}\n\n*Warning:* This member's subscription has expired. Emergency services will still be dispatched, but coverage may not apply."
+                f"*SUBSCRIPTION EXPIRED*\n\n*Member:* {member.get('first_name')} {member.get('last_name')}\n\nEmergency services will still be dispatched, but coverage may not apply."
             )
 
         # Start emergency flow
-        self.emergency_handler.start_emergency(session, member)
-        return self.emergency_handler.send_initial_message(phone_number, session)
-
-    def handle_menu_selection(self, phone_number: str, selection: str) -> dict:
-        """Handle main menu button selection."""
-        session = conversation_manager.get_session(phone_number)
-
-        if selection == 'menu_emergency':
-            # Look up member by phone
-            member = self.get_member_by_phone(phone_number)
-
-            if member:
-                self.emergency_handler.start_emergency(session, member)
-                return self.emergency_handler.send_initial_message(phone_number, session)
-            else:
-                return messages.send_not_registered(phone_number)
-
-        elif selection == 'menu_profile':
-            member = self.get_member_by_phone(phone_number)
-            if member:
-                return self._send_profile_summary(phone_number, member)
-            else:
-                return messages.send_not_registered(phone_number)
-
-        elif selection == 'menu_help':
-            return self._send_help_message(phone_number)
-
-        elif selection == 'register_start':
-            # TODO: Implement registration flow
-            return messages.send_text(
-                phone_number,
-                "Registration coming soon! For now, please visit our agent or website to register."
-            )
-
-        else:
-            return messages.send_welcome_menu(phone_number)
-
-    def _send_profile_summary(self, phone_number: str, member: dict) -> dict:
-        """Send member profile summary."""
-        name = f"{member.get('first_name', '')} {member.get('last_name', '')}".strip()
-        member_id = member.get('member_id', 'N/A')
-
-        # Get subscription info
-        subscriptions = member.get('subscriptions', [])
-        sub_text = "No active subscription"
-        if subscriptions:
-            sub = subscriptions[0]
-            tier = sub.get('tiers', {})
-            tier_name = tier.get('display_name', sub.get('tier_id', 'Unknown'))
-            status = sub.get('status', 'unknown')
-            expires = sub.get('expires_at', 'N/A')[:10] if sub.get('expires_at') else 'N/A'
-            sub_text = f"{tier_name} ({status})\nExpires: {expires}"
-
-        # Get EMR info
-        emr_records = member.get('emr_records', [])
-        emr = emr_records[0] if emr_records else {}
-        blood_type = emr.get('blood_type', 'Not set')
-
-        text = f"""*Your LifeTap Profile*
-
-*Name:* {name}
-*Member ID:* {member_id}
-*Phone:* {member.get('phone_number', 'N/A')}
-
-*Subscription:*
-{sub_text}
-
-*Medical Info:*
-Blood Type: {blood_type}
-
-Use your LifeTap card to activate emergency services when needed."""
-
-        return messages.send_text(phone_number, text)
-
-    def _send_help_message(self, phone_number: str) -> dict:
-        """Send help/information message."""
-        text = """*LifeTap Help*
-
-*What is LifeTap?*
-LifeTap provides emergency medical response coverage for just $1-5/month.
-
-*How to use:*
-1. Register and choose a plan
-2. Receive your LifeTap NFC card
-3. In an emergency, tap the card or scan QR code
-4. A bystander answers quick questions
-5. Ambulance is dispatched to your location
-
-*Plans:*
-- Lifeline ($1/month): Road ambulance
-- Shield ($2.50/month): Road + Air ambulance
-- Guardian ($5/month): Full coverage + $75 emergency fund
-
-*Contact:*
-Emergency: Tap your card
-Support: support@lifetap.co.zw
-Website: www.lifetap.co.zw"""
-
-        return messages.send_text(phone_number, text)
+        self.emergency_flow.start_emergency(session, member)
+        return self.emergency_flow.send_initial_message(phone_number, session)
 
     def route_message(self, phone_number: str, message_type: str, message_data: dict) -> dict:
         """
-        Main message router.
+        Route incoming WhatsApp messages.
 
-        Determines the appropriate handler based on message content and session state.
+        Only handles:
+        1. EMERGENCY:LT-XXXX trigger from NFC scan
+        2. Responses during active emergency flow (buttons, lists, location)
         """
+        logger.info(f"Routing {message_type} message from {phone_number}")
+
         session = conversation_manager.get_session(phone_number)
 
-        # Handle based on message type
+        # Handle text messages
         if message_type == 'text':
             text = message_data.get('body', '').strip()
+            logger.info(f"Text received: {text[:50]}...")
 
             # Check for emergency trigger (from NFC deep link)
+            # Format: EMERGENCY:LT-2025-A7X9K3
             if text.upper().startswith('EMERGENCY:'):
-                member_id = text.split(':', 1)[1].strip()
+                member_id = text.split(':', 1)[1].strip().upper()
                 return self.handle_emergency_trigger(phone_number, member_id)
 
-            # Check for direct member ID scan
+            # Direct member ID (backup)
             if text.upper().startswith('LT-'):
                 return self.handle_emergency_trigger(phone_number, text.upper())
 
-            # If in an active flow, handle as text input
+            # If in active emergency flow, handle text input (scene description)
             if session.state != ConversationState.IDLE:
-                return self.emergency_handler.handle_input(session, phone_number, 'text', text)
+                return self.emergency_flow.handle_input(session, phone_number, 'text', text)
 
-            # Default: show menu
-            member = self.get_member_by_phone(phone_number)
-            if member:
-                return messages.send_welcome_menu(phone_number, member.get('first_name'))
-            else:
-                return messages.send_not_registered(phone_number)
+            # Not in a flow and not an emergency trigger - ignore or send help
+            logger.info(f"Ignoring non-emergency message from {phone_number}")
+            return messages.send_text(
+                phone_number,
+                "*LifeTap Emergency Response*\n\nTo activate emergency services, tap the NFC card or scan QR code on a member's LifeTap card.\n\nFor support: support@lifetap.co.zw"
+            )
 
+        # Handle interactive responses (buttons, lists)
         elif message_type == 'interactive':
             interactive = message_data
             interactive_type = interactive.get('type')
 
+            if session.state == ConversationState.IDLE:
+                # Not in a flow - ignore
+                logger.info(f"Ignoring interactive message - no active flow")
+                return {'status': 'ignored'}
+
             if interactive_type == 'button_reply':
                 button_id = interactive.get('button_reply', {}).get('id', '')
-
-                # Check if in active flow
-                if session.state != ConversationState.IDLE:
-                    return self.emergency_handler.handle_input(session, phone_number, 'button', button_id)
-
-                # Handle menu selections
-                return self.handle_menu_selection(phone_number, button_id)
+                logger.info(f"Button pressed: {button_id}")
+                return self.emergency_flow.handle_input(session, phone_number, 'button', button_id)
 
             elif interactive_type == 'list_reply':
                 list_id = interactive.get('list_reply', {}).get('id', '')
+                logger.info(f"List selected: {list_id}")
+                return self.emergency_flow.handle_input(session, phone_number, 'list', list_id)
 
-                # Handle in active flow
-                if session.state != ConversationState.IDLE:
-                    return self.emergency_handler.handle_input(session, phone_number, 'list', list_id)
-
-                return self.handle_menu_selection(phone_number, list_id)
-
+        # Handle location
         elif message_type == 'location':
             location = message_data
+            logger.info(f"Location received: {location.get('latitude')}, {location.get('longitude')}")
 
-            # Handle location in active flow
             if session.state != ConversationState.IDLE:
-                return self.emergency_handler.handle_input(session, phone_number, 'location', location)
+                return self.emergency_flow.handle_input(session, phone_number, 'location', location)
 
-            # Unexpected location
-            return messages.send_text(phone_number, "Thanks for sharing your location! How can we help you?")
+            # Location without active flow - ignore
+            return {'status': 'ignored'}
 
         # Unknown message type
-        member = self.get_member_by_phone(phone_number)
-        if member:
-            return messages.send_welcome_menu(phone_number, member.get('first_name'))
-        else:
-            return messages.send_not_registered(phone_number)
+        logger.info(f"Unknown message type: {message_type}")
+        return {'status': 'ignored'}
+
+
+# Alias for backwards compatibility
+MainMenuHandler = EmergencyHandler
