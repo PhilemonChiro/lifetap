@@ -66,44 +66,44 @@ def load_private_key():
     """
     Load RSA private key for WhatsApp Flow decryption.
 
-    Supports two methods:
-    1. WHATSAPP_PRIVATE_KEY env var (base64 encoded PEM) - for Coolify secrets
-    2. WHATSAPP_PRIVATE_KEY_PATH file path - for local development
+    Supports multiple formats:
+    1. WHATSAPP_PRIVATE_KEY env var - raw PEM string (with literal \\n or actual newlines)
+    2. WHATSAPP_PRIVATE_KEY_BASE64 env var - base64 encoded PEM
     """
     global private_key
     key_password = os.getenv('WHATSAPP_PRIVATE_KEY_PASSWORD')
     password_bytes = key_password.encode() if key_password else None
 
     try:
-        # Method 1: Load from environment variable (Coolify secrets)
-        key_env = os.getenv('WHATSAPP_PRIVATE_KEY')
-        if key_env:
-            # Key can be base64 encoded or raw PEM
-            try:
-                key_bytes = base64.b64decode(key_env)
-            except Exception:
-                key_bytes = key_env.encode()
-
+        # Method 1: Base64 encoded PEM (most reliable for env vars)
+        key_base64 = os.getenv('WHATSAPP_PRIVATE_KEY_BASE64')
+        if key_base64:
+            # Clean up any whitespace/newlines in the base64 string
+            key_base64_clean = key_base64.strip().replace('\n', '').replace('\r', '').replace(' ', '')
+            key_bytes = base64.b64decode(key_base64_clean)
             private_key = serialization.load_pem_private_key(
                 key_bytes,
                 password=password_bytes,
                 backend=default_backend()
             )
-            app.logger.info("Private key loaded from environment variable")
+            app.logger.info("Private key loaded from WHATSAPP_PRIVATE_KEY_BASE64")
             return
 
-        # Method 2: Load from file path
-        key_path = os.getenv('WHATSAPP_PRIVATE_KEY_PATH', 'keys/private.pem')
-        with open(key_path, 'rb') as f:
+        # Method 2: Raw PEM string (handle escaped newlines)
+        key_env = os.getenv('WHATSAPP_PRIVATE_KEY')
+        if key_env:
+            # Replace literal \n with actual newlines
+            key_pem = key_env.replace('\\n', '\n').strip()
             private_key = serialization.load_pem_private_key(
-                f.read(),
+                key_pem.encode(),
                 password=password_bytes,
                 backend=default_backend()
             )
-        app.logger.info(f"Private key loaded from file: {key_path}")
+            app.logger.info("Private key loaded from WHATSAPP_PRIVATE_KEY")
+            return
 
-    except FileNotFoundError:
-        app.logger.error(f"Private key file not found. Set WHATSAPP_PRIVATE_KEY env var or check path.")
+        app.logger.error("No private key configured. Set WHATSAPP_PRIVATE_KEY or WHATSAPP_PRIVATE_KEY_BASE64")
+
     except Exception as e:
         app.logger.error(f"Failed to load private key: {e}")
 
