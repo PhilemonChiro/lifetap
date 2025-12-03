@@ -833,10 +833,22 @@ def handle_flow():
 # =============================================================================
 
 # Import chatbot handler
-from chatbot.handlers import MainMenuHandler
+from chatbot.handlers import MessageHandler
+import asyncio
 
 # Initialize chatbot handler
-chatbot_handler = MainMenuHandler(supabase)
+message_handler = MessageHandler(supabase)
+
+
+def run_async(coro):
+    """Run async coroutine in sync context."""
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    return loop.run_until_complete(coro)
 
 
 @app.route('/whatsapp/webhook', methods=['GET'])
@@ -852,62 +864,30 @@ def verify_webhook():
     return 'Forbidden', 403
 
 
-# Message deduplication cache (message_id -> timestamp)
-# Prevents processing the same message twice
-_processed_messages = {}
-_DEDUP_TTL_SECONDS = 300  # 5 minutes
-
-
-def _is_duplicate_message(message_id: str) -> bool:
-    """Check if message was already processed."""
-    global _processed_messages
-
-    # Cleanup old entries
-    now = datetime.now()
-    _processed_messages = {
-        mid: ts for mid, ts in _processed_messages.items()
-        if (now - ts).seconds < _DEDUP_TTL_SECONDS
-    }
-
-    if message_id in _processed_messages:
-        app.logger.info(f"Duplicate message ignored: {message_id}")
-        return True
-
-    _processed_messages[message_id] = now
-    return False
-
-
 def _process_webhook_message(message: dict):
-    """Process a single webhook message."""
+    """Process a single webhook message using async MessageHandler."""
     msg_id = message.get('id')
     msg_type = message.get('type')
     from_number = message.get('from')
-    timestamp = message.get('timestamp')
-
-    # Skip if already processed
-    if msg_id and _is_duplicate_message(msg_id):
-        return
 
     app.logger.info(f"Processing {msg_type} from {from_number} (id: {msg_id})")
 
     try:
-        # Route based on message type
+        # Extract message data based on type
         if msg_type == 'text':
-            text_data = message.get('text', {})
-            chatbot_handler.route_message(from_number, 'text', text_data)
+            message_data = message.get('text', {})
 
         elif msg_type == 'interactive':
-            interactive_data = message.get('interactive', {})
-            chatbot_handler.route_message(from_number, 'interactive', interactive_data)
+            message_data = message.get('interactive', {})
 
         elif msg_type == 'location':
-            location_data = message.get('location', {})
-            chatbot_handler.route_message(from_number, 'location', location_data)
+            message_data = message.get('location', {})
 
         elif msg_type == 'button':
-            # Template button response
+            # Template button response - convert to text
             button_data = message.get('button', {})
-            chatbot_handler.route_message(from_number, 'text', {'body': button_data.get('text', '')})
+            message_data = {'body': button_data.get('text', '')}
+            msg_type = 'text'
 
         elif msg_type in ('image', 'audio', 'video', 'document', 'sticker'):
             # Media messages - send help text
@@ -917,9 +897,22 @@ def _process_webhook_message(message: dict):
                 from_number,
                 "*LifeTap Emergency Response*\n\nTo activate emergency services, tap the NFC card or scan QR code on a member's LifeTap card."
             )
+            return
 
         else:
             app.logger.info(f"Ignoring message type: {msg_type}")
+            return
+
+        # Process message via async handler
+        result = run_async(
+            message_handler.process_message(
+                user_id=from_number,
+                message_type=msg_type,
+                message_data=message_data,
+                message_id=msg_id
+            )
+        )
+        app.logger.info(f"Message processed: {result.get('status', 'unknown')}")
 
     except Exception as e:
         app.logger.error(f"Error processing message {msg_id}: {e}")
