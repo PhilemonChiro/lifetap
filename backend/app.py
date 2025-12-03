@@ -852,55 +852,120 @@ def verify_webhook():
     return 'Forbidden', 403
 
 
-@app.route('/whatsapp/webhook', methods=['POST'])
-def receive_webhook():
-    """Receive WhatsApp messages and events."""
-    data = request.get_json()
+# Message deduplication cache (message_id -> timestamp)
+# Prevents processing the same message twice
+_processed_messages = {}
+_DEDUP_TTL_SECONDS = 300  # 5 minutes
 
-    app.logger.info(f"Webhook received: {json.dumps(data, indent=2)}")
+
+def _is_duplicate_message(message_id: str) -> bool:
+    """Check if message was already processed."""
+    global _processed_messages
+
+    # Cleanup old entries
+    now = datetime.now()
+    _processed_messages = {
+        mid: ts for mid, ts in _processed_messages.items()
+        if (now - ts).seconds < _DEDUP_TTL_SECONDS
+    }
+
+    if message_id in _processed_messages:
+        app.logger.info(f"Duplicate message ignored: {message_id}")
+        return True
+
+    _processed_messages[message_id] = now
+    return False
+
+
+def _process_webhook_message(message: dict):
+    """Process a single webhook message."""
+    msg_id = message.get('id')
+    msg_type = message.get('type')
+    from_number = message.get('from')
+    timestamp = message.get('timestamp')
+
+    # Skip if already processed
+    if msg_id and _is_duplicate_message(msg_id):
+        return
+
+    app.logger.info(f"Processing {msg_type} from {from_number} (id: {msg_id})")
 
     try:
-        # Extract message info
-        entry = data.get('entry', [{}])[0]
-        changes = entry.get('changes', [{}])[0]
-        value = changes.get('value', {})
-        webhook_messages = value.get('messages', [])
+        # Route based on message type
+        if msg_type == 'text':
+            text_data = message.get('text', {})
+            chatbot_handler.route_message(from_number, 'text', text_data)
 
-        for message in webhook_messages:
-            msg_type = message.get('type')
-            from_number = message.get('from')
+        elif msg_type == 'interactive':
+            interactive_data = message.get('interactive', {})
+            chatbot_handler.route_message(from_number, 'interactive', interactive_data)
 
-            app.logger.info(f"Processing {msg_type} message from {from_number}")
+        elif msg_type == 'location':
+            location_data = message.get('location', {})
+            chatbot_handler.route_message(from_number, 'location', location_data)
 
-            # Route message through chatbot handler
-            if msg_type == 'text':
-                text_data = message.get('text', {})
-                chatbot_handler.route_message(from_number, 'text', text_data)
+        elif msg_type == 'button':
+            # Template button response
+            button_data = message.get('button', {})
+            chatbot_handler.route_message(from_number, 'text', {'body': button_data.get('text', '')})
 
-            elif msg_type == 'interactive':
-                interactive_data = message.get('interactive', {})
-                chatbot_handler.route_message(from_number, 'interactive', interactive_data)
+        elif msg_type in ('image', 'audio', 'video', 'document', 'sticker'):
+            # Media messages - send help text
+            app.logger.info(f"Media message received: {msg_type}")
+            from chatbot import messages as chat_messages
+            chat_messages.send_text(
+                from_number,
+                "*LifeTap Emergency Response*\n\nTo activate emergency services, tap the NFC card or scan QR code on a member's LifeTap card."
+            )
 
-            elif msg_type == 'location':
-                location_data = message.get('location', {})
-                chatbot_handler.route_message(from_number, 'location', location_data)
-
-            elif msg_type == 'button':
-                # Template button response
-                button_data = message.get('button', {})
-                chatbot_handler.route_message(from_number, 'text', {'body': button_data.get('text', '')})
-
-            else:
-                # Unsupported message type - send menu
-                app.logger.info(f"Unsupported message type: {msg_type}")
-                chatbot_handler.route_message(from_number, 'text', {'body': ''})
+        else:
+            app.logger.info(f"Ignoring message type: {msg_type}")
 
     except Exception as e:
-        app.logger.error(f"Webhook processing error: {e}")
+        app.logger.error(f"Error processing message {msg_id}: {e}")
         import traceback
         app.logger.error(traceback.format_exc())
 
-    # Always return 200 to acknowledge receipt
+
+@app.route('/whatsapp/webhook', methods=['POST'])
+def receive_webhook():
+    """
+    Receive WhatsApp messages and events.
+
+    WhatsApp expects 200 OK within 20 seconds or it will retry.
+    We return immediately and process messages.
+    """
+    data = request.get_json()
+
+    # Log webhook receipt (compact)
+    app.logger.info(f"Webhook received from WhatsApp")
+
+    try:
+        # Validate webhook structure
+        if not data or 'entry' not in data:
+            app.logger.warning("Invalid webhook payload - missing entry")
+            return jsonify({'status': 'ok'}), 200
+
+        for entry in data.get('entry', []):
+            for change in entry.get('changes', []):
+                value = change.get('value', {})
+
+                # Skip status updates (delivered, read, etc.)
+                if 'statuses' in value:
+                    app.logger.debug("Ignoring status update")
+                    continue
+
+                # Process messages
+                messages_list = value.get('messages', [])
+                for message in messages_list:
+                    _process_webhook_message(message)
+
+    except Exception as e:
+        app.logger.error(f"Webhook error: {e}")
+        import traceback
+        app.logger.error(traceback.format_exc())
+
+    # Always return 200 to prevent WhatsApp retries
     return jsonify({'status': 'ok'}), 200
 
 
