@@ -833,22 +833,17 @@ def handle_flow():
 # =============================================================================
 
 # Import chatbot handler
-from chatbot.handlers import MessageHandler
-import asyncio
+from chatbot.handlers import ChatbotHandler
 
 # Initialize chatbot handler
-message_handler = MessageHandler(supabase)
+chatbot = ChatbotHandler(supabase)
 
-
-def run_async(coro):
-    """Run async coroutine in sync context."""
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    return loop.run_until_complete(coro)
+# Simple logging function that prints to stdout
+def log(msg: str):
+    """Print log message to stdout."""
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] WEBHOOK: {msg}", flush=True)
 
 
 @app.route('/whatsapp/webhook', methods=['GET'])
@@ -858,6 +853,8 @@ def verify_webhook():
     token = request.args.get('hub.verify_token')
     challenge = request.args.get('hub.challenge')
 
+    log(f"Webhook verification: mode={mode}, token_match={token == WHATSAPP_CONFIG['webhook_verify_token']}")
+
     if mode == 'subscribe' and token == WHATSAPP_CONFIG['webhook_verify_token']:
         return challenge, 200
 
@@ -865,35 +862,37 @@ def verify_webhook():
 
 
 def _process_webhook_message(message: dict):
-    """Process a single webhook message using async MessageHandler."""
+    """Process a single webhook message."""
     msg_id = message.get('id')
     msg_type = message.get('type')
     from_number = message.get('from')
 
-    app.logger.info(f"Processing {msg_type} from {from_number} (id: {msg_id})")
-    app.logger.debug(f"Raw message payload: {message}")
+    log(f"Processing message: type={msg_type}, from={from_number}, id={msg_id}")
 
     try:
         # Extract message data based on type
         if msg_type == 'text':
             message_data = message.get('text', {})
+            log(f"Text data: {message_data}")
 
         elif msg_type == 'interactive':
             message_data = message.get('interactive', {})
-            app.logger.info(f"Interactive message data: {message_data}")
+            log(f"Interactive data: {message_data}")
 
         elif msg_type == 'location':
             message_data = message.get('location', {})
+            log(f"Location data: {message_data}")
 
         elif msg_type == 'button':
             # Template button response - convert to text
             button_data = message.get('button', {})
             message_data = {'body': button_data.get('text', '')}
             msg_type = 'text'
+            log(f"Button converted to text: {message_data}")
 
         elif msg_type in ('image', 'audio', 'video', 'document', 'sticker'):
             # Media messages - send help text
-            app.logger.info(f"Media message received: {msg_type}")
+            log(f"Media message received: {msg_type}")
             from chatbot import messages as chat_messages
             chat_messages.send_text(
                 from_number,
@@ -902,24 +901,21 @@ def _process_webhook_message(message: dict):
             return
 
         else:
-            app.logger.info(f"Ignoring message type: {msg_type}")
+            log(f"Ignoring unknown message type: {msg_type}")
             return
 
-        # Process message via async handler
-        result = run_async(
-            message_handler.process_message(
-                user_id=from_number,
-                message_type=msg_type,
-                message_data=message_data,
-                message_id=msg_id
-            )
+        # Process message via chatbot handler
+        result = chatbot.handle_message(
+            phone=from_number,
+            msg_type=msg_type,
+            msg_data=message_data
         )
-        app.logger.info(f"Message processed: {result.get('status', 'unknown')}")
+        log(f"Handler result: {result}")
 
     except Exception as e:
-        app.logger.error(f"Error processing message {msg_id}: {e}")
+        log(f"ERROR processing message {msg_id}: {e}")
         import traceback
-        app.logger.error(traceback.format_exc())
+        traceback.print_exc()
 
 
 @app.route('/whatsapp/webhook', methods=['POST'])
@@ -932,13 +928,12 @@ def receive_webhook():
     """
     data = request.get_json()
 
-    # Log webhook receipt (compact)
-    app.logger.info(f"Webhook received from WhatsApp")
+    log(f"=== WEBHOOK RECEIVED ===")
 
     try:
         # Validate webhook structure
         if not data or 'entry' not in data:
-            app.logger.warning("Invalid webhook payload - missing entry")
+            log("Invalid webhook payload - missing entry")
             return jsonify({'status': 'ok'}), 200
 
         for entry in data.get('entry', []):
@@ -947,18 +942,20 @@ def receive_webhook():
 
                 # Skip status updates (delivered, read, etc.)
                 if 'statuses' in value:
-                    app.logger.debug("Ignoring status update")
+                    log("Skipping status update (delivered/read)")
                     continue
 
                 # Process messages
                 messages_list = value.get('messages', [])
+                log(f"Found {len(messages_list)} message(s) to process")
+
                 for message in messages_list:
                     _process_webhook_message(message)
 
     except Exception as e:
-        app.logger.error(f"Webhook error: {e}")
+        log(f"ERROR in webhook: {e}")
         import traceback
-        app.logger.error(traceback.format_exc())
+        traceback.print_exc()
 
     # Always return 200 to prevent WhatsApp retries
     return jsonify({'status': 'ok'}), 200
