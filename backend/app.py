@@ -500,13 +500,13 @@ def handle_flow():
                 'data': {}
             }
 
-        # Encrypt and return
+        # Encrypt and return as plain text (not JSON)
         encrypted = encrypt_flow_response(response)
-        return jsonify({'encrypted_response': encrypted})
+        return encrypted, 200, {'Content-Type': 'text/plain'}
 
     except Exception as e:
         app.logger.error(f"Flow error: {e}")
-        return jsonify({'error': str(e)}), 500
+        return str(e), 500, {'Content-Type': 'text/plain'}
 
 
 # =============================================================================
