@@ -129,8 +129,8 @@ class ChatbotHandler:
             log(f"Direct member ID: {text.upper()}")
             return self._start_emergency(phone, session, text.upper())
 
-        # Handle scene description input
-        if session["state"] == "scene_input":
+        # Handle scene description input (both scene and scene_input states)
+        if session["state"] in ("scene", "scene_input"):
             return self._handle_scene_text(phone, session, text)
 
         # Default: send help
@@ -480,7 +480,7 @@ class ChatbotHandler:
                 "gps_longitude": data.get("longitude"),
                 "address_description": data.get("address"),
                 "activated_by_phone": phone,
-                "activation_method": "whatsapp_chatbot",
+                "activation_method": "whatsapp",
                 "status": "activated",
                 "activated_at": datetime.now().isoformat()
             }
