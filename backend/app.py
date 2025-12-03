@@ -83,9 +83,9 @@ if PAYNOW_CONFIG['integration_id'] and PAYNOW_CONFIG['integration_key']:
 
 # Subscription tier pricing (in cents USD)
 TIER_PRICING = {
-    'lifeline': 100,      # $1.00
-    'guardian': 250,      # $2.50
-    'shield_plus': 500,   # $5.00
+    'lifeline': 100,   # $1.00
+    'shield': 250,     # $2.50
+    'guardian': 500,   # $5.00
 }
 
 # Tier coverage limits (in cents USD)
@@ -94,11 +94,11 @@ TIER_COVERAGE = {
         'max_coverage_cents': 15000,  # $150
         'services': ['road_ambulance'],
     },
-    'guardian': {
+    'shield': {
         'max_coverage_cents': 50000,  # $500
         'services': ['road_ambulance', 'air_ambulance', 'stabilization'],
     },
-    'shield_plus': {
+    'guardian': {
         'max_coverage_cents': 100000,  # $1000
         'services': ['road_ambulance', 'air_ambulance', 'stabilization', 'transfer', 'emergency_fund'],
     },
