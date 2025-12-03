@@ -288,15 +288,14 @@ def send_victim_count_list(to: str) -> dict:
 def send_scene_description_request(to: str) -> dict:
     """Ask for optional scene description."""
     buttons = [
-        {'id': 'scene_skip', 'title': 'Skip'},
-        {'id': 'scene_describe', 'title': 'Add Details'}
+        {'id': 'scene_skip', 'title': 'Skip'}
     ]
 
     return send_buttons(
         to=to,
-        body="Would you like to add any details about the scene that could help responders?\n\n(e.g., exact location landmarks, hazards, number of vehicles involved)",
+        body="Any details about the scene? (Optional)\n\nType a brief description or tap Skip.\n\n_e.g., \"Near OK supermarket, 2 cars involved, fuel leaking\"_",
         buttons=buttons,
-        header="Scene Details (Optional)"
+        header="Scene Details"
     )
 
 
