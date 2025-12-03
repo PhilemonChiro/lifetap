@@ -361,6 +361,17 @@ def get_member_by_id(member_id: str) -> dict:
         return None
 
 
+def get_member_subscription(member_uuid: str) -> dict:
+    """Get active subscription for a member."""
+    try:
+        result = supabase.table('subscriptions').select('*').eq(
+            'member_id', member_uuid
+        ).eq('status', 'active').single().execute()
+        return result.data
+    except Exception:
+        return None
+
+
 def create_incident(data: dict) -> dict:
     """Create emergency incident in Supabase."""
     try:
@@ -368,15 +379,32 @@ def create_incident(data: dict) -> dict:
         timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
         incident_number = f"INC-{timestamp}"
 
+        # Get member UUID from member_id string
+        member_id_str = data.get('member_id')
+        member = None
+        member_uuid = None
+        member_tier = None
+
+        if member_id_str:
+            member = get_member_by_id(member_id_str)
+            if member:
+                member_uuid = member.get('id')
+                # Get subscription tier
+                subscription = get_member_subscription(member_uuid)
+                if subscription:
+                    member_tier = subscription.get('tier')
+
         incident_data = {
             'incident_number': incident_number,
-            'member_id': data.get('member_id'),
+            'member_id': member_uuid,
+            'member_tier': member_tier,
             'emergency_type': data.get('emergency_type'),
-            'patient_conscious': data.get('conscious'),
-            'patient_breathing': data.get('breathing'),
-            'victim_count': data.get('victim_count'),
+            'patient_conscious': data.get('conscious') == 'yes' if data.get('conscious') else None,
+            'patient_breathing': data.get('breathing') == 'yes' if data.get('breathing') else None,
+            'victim_count': int(data.get('victim_count', 1)) if data.get('victim_count') else 1,
             'scene_description': data.get('scene_description'),
             'activated_by_phone': data.get('bystander_phone'),
+            'activation_method': 'whatsapp',
             'status': 'activated',
             'activated_at': datetime.now().isoformat()
         }
