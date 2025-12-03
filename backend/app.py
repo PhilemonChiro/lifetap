@@ -81,28 +81,54 @@ if PAYNOW_CONFIG['integration_id'] and PAYNOW_CONFIG['integration_key']:
         PAYNOW_CONFIG['return_url']
     )
 
-# Subscription tier pricing (in cents USD)
-TIER_PRICING = {
-    'lifeline': 100,   # $1.00
-    'shield': 250,     # $2.50
-    'guardian': 500,   # $5.00
-}
+# =============================================================================
+# TIER HELPERS (fetch from database)
+# =============================================================================
 
-# Tier coverage limits (in cents USD)
-TIER_COVERAGE = {
-    'lifeline': {
-        'max_coverage_cents': 15000,  # $150
-        'services': ['road_ambulance'],
-    },
-    'shield': {
-        'max_coverage_cents': 50000,  # $500
-        'services': ['road_ambulance', 'air_ambulance', 'stabilization'],
-    },
-    'guardian': {
-        'max_coverage_cents': 100000,  # $1000
-        'services': ['road_ambulance', 'air_ambulance', 'stabilization', 'transfer', 'emergency_fund'],
-    },
-}
+_tiers_cache = None
+_tiers_cache_time = None
+TIER_CACHE_TTL = 300  # Cache tiers for 5 minutes
+
+
+def get_tiers() -> dict:
+    """Fetch tiers from database with caching."""
+    global _tiers_cache, _tiers_cache_time
+
+    # Check cache
+    if _tiers_cache and _tiers_cache_time:
+        if (datetime.now() - _tiers_cache_time).seconds < TIER_CACHE_TTL:
+            return _tiers_cache
+
+    try:
+        result = supabase.table('tiers').select('*').eq('is_active', True).execute()
+        if result.data:
+            _tiers_cache = {tier['name']: tier for tier in result.data}
+            _tiers_cache_time = datetime.now()
+            return _tiers_cache
+    except Exception as e:
+        app.logger.error(f"Error fetching tiers: {e}")
+
+    # Fallback to defaults if DB unavailable
+    return {
+        'lifeline': {'id': None, 'name': 'lifeline', 'price_cents': 100, 'max_coverage_cents': 15000, 'services_covered': ['road_ambulance']},
+        'shield': {'id': None, 'name': 'shield', 'price_cents': 250, 'max_coverage_cents': 50000, 'services_covered': ['road_ambulance', 'air_ambulance', 'stabilization']},
+        'guardian': {'id': None, 'name': 'guardian', 'price_cents': 500, 'max_coverage_cents': 100000, 'services_covered': ['road_ambulance', 'air_ambulance', 'stabilization', 'transfer', 'emergency_fund']},
+    }
+
+
+def get_tier(slug: str) -> dict:
+    """Get a specific tier by slug."""
+    tiers = get_tiers()
+    return tiers.get(slug)
+
+
+def get_tier_by_id(tier_id: str) -> dict:
+    """Get a tier by its UUID."""
+    tiers = get_tiers()
+    for tier in tiers.values():
+        if tier.get('id') == tier_id:
+            return tier
+    return None
 
 # Private key for Flow decryption
 private_key = None
@@ -408,11 +434,11 @@ def get_member_by_id(member_id: str) -> dict:
 
 
 def get_member_subscription(member_uuid: str) -> dict:
-    """Get active subscription for a member."""
+    """Get active subscription for a member with tier details."""
     try:
-        result = supabase.table('subscriptions').select('*').eq(
-            'member_id', member_uuid
-        ).eq('status', 'active').single().execute()
+        result = supabase.table('subscriptions').select(
+            '*, tiers(*)'
+        ).eq('member_id', member_uuid).eq('status', 'active').single().execute()
         return result.data
     except Exception:
         return None
@@ -437,8 +463,8 @@ def create_incident(data: dict) -> dict:
                 member_uuid = member.get('id')
                 # Get subscription tier
                 subscription = get_member_subscription(member_uuid)
-                if subscription:
-                    member_tier = subscription.get('tier')
+                if subscription and subscription.get('tiers'):
+                    member_tier = subscription['tiers'].get('name')
 
         incident_data = {
             'incident_number': incident_number,
@@ -487,7 +513,7 @@ def generate_transaction_ref() -> str:
     return f"LT-{timestamp}-{random_part}"
 
 
-def create_subscription_payment(member_id: str, tier: str, phone_number: str) -> dict:
+def create_subscription_payment(member_id: str, tier_slug: str, phone_number: str) -> dict:
     """
     Initiate subscription payment via Paynow.
 
@@ -496,9 +522,11 @@ def create_subscription_payment(member_id: str, tier: str, phone_number: str) ->
     if not paynow:
         return {'error': 'Payment system not configured'}
 
-    price_cents = TIER_PRICING.get(tier)
-    if not price_cents:
-        return {'error': f'Invalid tier: {tier}'}
+    tier = get_tier(tier_slug)
+    if not tier:
+        return {'error': f'Invalid tier: {tier_slug}'}
+
+    price_cents = tier.get('price_cents')
 
     price_usd = price_cents / 100
     transaction_ref = generate_transaction_ref()
@@ -524,7 +552,7 @@ def create_subscription_payment(member_id: str, tier: str, phone_number: str) ->
                 'payment_method': 'ecocash',
                 'phone_number': phone_number,
                 'paynow_poll_url': response.poll_url,
-                'description': f'LifeTap {tier.title()} Subscription',
+                'description': f"LifeTap {tier.get('name', tier_slug.title())} Subscription",
                 'initiated_at': datetime.now().isoformat()
             }
 
@@ -562,18 +590,20 @@ def check_payment_status(poll_url: str) -> dict:
         return {'error': str(e)}
 
 
-def activate_subscription(member_id: str, tier: str, transaction_id: str = None) -> dict:
+def activate_subscription(member_id: str, tier_slug: str, transaction_id: str = None) -> dict:
     """Activate or renew a member's subscription."""
     try:
-        price_cents = TIER_PRICING.get(tier, 100)
+        tier = get_tier(tier_slug)
+        if not tier or not tier.get('id'):
+            app.logger.error(f"Tier not found: {tier_slug}")
+            return None
+
         now = datetime.now()
         expires_at = now + timedelta(days=30)
 
         subscription_data = {
             'member_id': member_id,
-            'tier': tier,
-            'price_cents': price_cents,
-            'currency': 'USD',
+            'tier_id': tier['id'],
             'status': 'active',
             'started_at': now.isoformat(),
             'expires_at': expires_at.isoformat(),
@@ -612,10 +642,13 @@ def activate_subscription(member_id: str, tier: str, transaction_id: str = None)
         return None
 
 
-def generate_payment_token(incident_id: str, member_id: str, subscription_id: str, tier: str) -> dict:
+def generate_payment_token(incident_id: str, member_id: str, subscription_id: str, tier_id: str) -> dict:
     """Generate a Guaranteed Payment Token for an emergency."""
     try:
-        coverage = TIER_COVERAGE.get(tier, TIER_COVERAGE['lifeline'])
+        tier = get_tier_by_id(tier_id)
+        if not tier:
+            # Fallback to lifeline
+            tier = get_tier('lifeline')
 
         # Generate token code
         token_code = f"GPT-{uuid.uuid4().hex[:8].upper()}"
@@ -625,9 +658,9 @@ def generate_payment_token(incident_id: str, member_id: str, subscription_id: st
             'incident_id': incident_id,
             'member_id': member_id,
             'subscription_id': subscription_id,
-            'tier': tier,
-            'max_coverage_cents': coverage['max_coverage_cents'],
-            'services_covered': coverage['services'],
+            'tier_id': tier_id,
+            'max_coverage_cents': tier.get('max_coverage_cents', 15000),
+            'services_covered': tier.get('services_included', ['road_ambulance']),
             'status': 'active',
             'issued_at': datetime.now().isoformat(),
             'expires_at': (datetime.now() + timedelta(hours=24)).isoformat()
@@ -654,13 +687,14 @@ def verify_payment_token(token_code: str) -> dict:
     """Verify a payment token for ambulance providers."""
     try:
         result = supabase.table('payment_tokens').select(
-            '*, members(*), incidents(*)'
+            '*, members(*), incidents(*), tiers(*)'
         ).eq('token_code', token_code).single().execute()
 
         if not result.data:
             return {'valid': False, 'error': 'Token not found'}
 
         token = result.data
+        tier = token.get('tiers', {})
 
         # Check status
         if token['status'] != 'active':
@@ -674,7 +708,8 @@ def verify_payment_token(token_code: str) -> dict:
         return {
             'valid': True,
             'token_code': token_code,
-            'tier': token['tier'],
+            'tier': tier.get('name') if tier else None,
+            'tier_display_name': tier.get('display_name') if tier else None,
             'max_coverage_cents': token['max_coverage_cents'],
             'services_covered': token['services_covered'],
             'member': token.get('members'),
@@ -797,6 +832,13 @@ def handle_flow():
 # WHATSAPP WEBHOOK (for regular messages)
 # =============================================================================
 
+# Import chatbot handler
+from chatbot.handlers import MainMenuHandler
+
+# Initialize chatbot handler
+chatbot_handler = MainMenuHandler(supabase)
+
+
 @app.route('/whatsapp/webhook', methods=['GET'])
 def verify_webhook():
     """Verify webhook for WhatsApp."""
@@ -822,54 +864,43 @@ def receive_webhook():
         entry = data.get('entry', [{}])[0]
         changes = entry.get('changes', [{}])[0]
         value = changes.get('value', {})
-        messages = value.get('messages', [])
+        webhook_messages = value.get('messages', [])
 
-        for message in messages:
+        for message in webhook_messages:
             msg_type = message.get('type')
             from_number = message.get('from')
 
-            if msg_type == 'location':
-                # Received location from bystander
-                location = message.get('location', {})
-                lat = location.get('latitude')
-                lng = location.get('longitude')
+            app.logger.info(f"Processing {msg_type} message from {from_number}")
 
-                app.logger.info(f"Location received: {lat}, {lng} from {from_number}")
-
-                # TODO: Find the active incident for this phone number
-                # Update incident with location
-                # Dispatch ambulance
-
-                # Send confirmation
-                send_whatsapp_message(
-                    from_number,
-                    "📍 Location received! Dispatching nearest ambulance now..."
-                )
-
-            elif msg_type == 'text':
-                text = message.get('text', {}).get('body', '')
-
-                # Check for emergency trigger from NFC/QR
-                if text.startswith('EMERGENCY:'):
-                    member_id = text.replace('EMERGENCY:', '').strip()
-                    app.logger.info(f"Emergency triggered for {member_id}")
-
-                    # TODO: Send Flow or interactive message
+            # Route message through chatbot handler
+            if msg_type == 'text':
+                text_data = message.get('text', {})
+                chatbot_handler.route_message(from_number, 'text', text_data)
 
             elif msg_type == 'interactive':
-                # Button click response
-                interactive = message.get('interactive', {})
-                button_id = interactive.get('button_reply', {}).get('id')
+                interactive_data = message.get('interactive', {})
+                chatbot_handler.route_message(from_number, 'interactive', interactive_data)
 
-                if button_id == 'share_location':
-                    send_whatsapp_message(
-                        from_number,
-                        "Please tap the 📎 attachment icon, select 'Location', and share your current location."
-                    )
+            elif msg_type == 'location':
+                location_data = message.get('location', {})
+                chatbot_handler.route_message(from_number, 'location', location_data)
+
+            elif msg_type == 'button':
+                # Template button response
+                button_data = message.get('button', {})
+                chatbot_handler.route_message(from_number, 'text', {'body': button_data.get('text', '')})
+
+            else:
+                # Unsupported message type - send menu
+                app.logger.info(f"Unsupported message type: {msg_type}")
+                chatbot_handler.route_message(from_number, 'text', {'body': ''})
 
     except Exception as e:
         app.logger.error(f"Webhook processing error: {e}")
+        import traceback
+        app.logger.error(traceback.format_exc())
 
+    # Always return 200 to acknowledge receipt
     return jsonify({'status': 'ok'}), 200
 
 
