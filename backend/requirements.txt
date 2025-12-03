@@ -14,7 +14,7 @@ supabase>=2.0.0
 requests>=2.31.0
 
 # Paynow Zimbabwe
-paynow>=2.2.2
+paynow>=1.0.8
 
 # Environment Variables
 python-dotenv>=1.0.0
