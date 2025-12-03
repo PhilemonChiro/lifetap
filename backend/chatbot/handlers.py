@@ -294,12 +294,19 @@ class MessageHandler:
         session.set_data("allergies", self._format_list(emr.get("allergies", [])) or "None known")
         session.set_data("conditions", self._format_list(emr.get("chronic_conditions", [])) or "None known")
 
-        # Check subscription
+        # Check subscription and get tier
         subscriptions = member.get("subscriptions", [])
         active_sub = next((s for s in subscriptions if s.get("status") == "active"), None)
 
-        if not active_sub:
+        if active_sub:
+            # Get tier info from subscription
+            tier_info = active_sub.get("tiers", {})
+            tier_name = tier_info.get("name", "lifeline") if tier_info else "lifeline"
+            session.set_data("member_tier", tier_name)
+            logger.info(f"Member {member_id} has active {tier_name} subscription")
+        else:
             logger.warning(f"Subscription expired for {member_id}")
+            session.set_data("member_tier", None)
             messages.send_text(
                 user_id,
                 f"*SUBSCRIPTION EXPIRED*\n\n"
@@ -608,6 +615,7 @@ class MessageHandler:
             incident_data = {
                 "incident_number": incident_number,
                 "member_id": session.member_uuid,
+                "member_tier": session.get_data("member_tier"),
                 "emergency_type": session.get_data("emergency_type_id"),
                 "patient_conscious": patient_conscious,
                 "patient_breathing": patient_breathing,
