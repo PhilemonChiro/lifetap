@@ -459,7 +459,8 @@ class ChatbotHandler:
 
             # Map values
             breathing = data.get("breathing")
-            patient_breathing = True if breathing == "yes" else (False if breathing == "no" else None)
+            # "yes" or "struggling" = True (breathing), "no" = False (not breathing)
+            patient_breathing = True if breathing in ["yes", "struggling"] else (False if breathing == "no" else None)
 
             conscious = data.get("conscious")
             patient_conscious = True if conscious == "yes" else (False if conscious == "no" else None)
